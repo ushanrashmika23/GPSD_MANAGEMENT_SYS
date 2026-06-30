@@ -92,6 +92,7 @@ export function Shell({ user, onLogout, state }: ShellProps) {
             students={state.students}
             batches={state.batches}
             role={role}
+            materials={state.materials}
           />
         );
       case "fees":

@@ -129,13 +129,13 @@ export const INIT_MARKS: Mark[] = (() => {
 })();
 
 export const INIT_MATERIALS: Material[] = [
-  { id: "mat1", title: "Integration Techniques — Lecture Notes", type: "pdf", url: "#", batchIds: ["b1", "b2", "b3"], lessonId: "l1", uploadDate: "2025-05-10", expiryDate: null, accessCount: 87 },
-  { id: "mat2", title: "Lecture 12 — Integration by Parts (Video)", type: "video", url: "https://drive.google.com", batchIds: ["b1", "b2"], lessonId: "l1", uploadDate: "2025-05-10", expiryDate: "2025-12-31", accessCount: 64 },
-  { id: "mat3", title: "Differential Equations — Summary Sheet", type: "pdf", url: "#", batchIds: ["b1", "b2", "b3"], lessonId: "l2", uploadDate: "2025-04-25", expiryDate: null, accessCount: 102 },
-  { id: "mat4", title: "Lecture 8 — Second Order DEs (Recording)", type: "video", url: "https://drive.google.com", batchIds: ["b2", "b3"], lessonId: "l2", uploadDate: "2025-04-25", expiryDate: "2025-12-31", accessCount: 45 },
-  { id: "mat5", title: "Vectors — Past Paper Collection 2015–2023", type: "pdf", url: "#", batchIds: ["b1"], lessonId: "l3", uploadDate: "2025-03-15", expiryDate: null, accessCount: 123 },
-  { id: "mat6", title: "AL 2019 Combined Maths Paper (Official)", type: "link", url: "https://nie.lk", batchIds: ["b1", "b2", "b3"], lessonId: "l4", uploadDate: "2025-03-01", expiryDate: null, accessCount: 156 },
-  { id: "mat7", title: "Complex Numbers — Argand Diagrams Notes", type: "pdf", url: "#", batchIds: ["b1", "b2", "b3"], lessonId: "l6", uploadDate: "2025-05-22", expiryDate: null, accessCount: 31 },
+  { id: "mat1", title: "Integration Techniques — Lecture Notes", contentType: "pdf", url: "#", batchIds: ["b1", "b2", "b3"], lessonId: "l1", uploadDate: "2025-05-10", expiryDate: null, accessCount: 87 },
+  { id: "mat2", title: "Lecture 12 — Integration by Parts (Video)", contentType: "video", url: "https://drive.google.com", batchIds: ["b1", "b2"], lessonId: "l1", uploadDate: "2025-05-10", expiryDate: "2025-12-31", accessCount: 64 },
+  { id: "mat3", title: "Differential Equations — Summary Sheet", contentType: "pdf", url: "#", batchIds: ["b1", "b2", "b3"], lessonId: "l2", uploadDate: "2025-04-25", expiryDate: null, accessCount: 102 },
+  { id: "mat4", title: "Lecture 8 — Second Order DEs (Recording)", contentType: "video", url: "https://drive.google.com", batchIds: ["b2", "b3"], lessonId: "l2", uploadDate: "2025-04-25", expiryDate: "2025-12-31", accessCount: 45 },
+  { id: "mat5", title: "Vectors — Past Paper Collection 2015–2023", contentType: "pdf", url: "#", batchIds: ["b1"], lessonId: "l3", uploadDate: "2025-03-15", expiryDate: null, accessCount: 123 },
+  { id: "mat6", title: "AL 2019 Combined Maths Paper (Official)", contentType: "link", url: "https://nie.lk", batchIds: ["b1", "b2", "b3"], lessonId: "l4", uploadDate: "2025-03-01", expiryDate: null, accessCount: 156 },
+  { id: "mat7", title: "Complex Numbers — Argand Diagrams Notes", contentType: "pdf", url: "#", batchIds: ["b1", "b2", "b3"], lessonId: "l6", uploadDate: "2025-05-22", expiryDate: null, accessCount: 31 },
 ];
 
 export const INIT_LESSONS: Lesson[] = [

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, Video, Upload } from "lucide-react";
+import { FileText, Video, Upload, ScrollText, Check, Pen } from "lucide-react";
 import { Link as LinkIcon } from "lucide-react";
 import { Badge, Btn, Input, Sel, Modal, Card } from "../ui";
 import { EmptyState } from "../ui";
@@ -7,6 +7,7 @@ import { FLabel } from "../ui";
 import { fmtDate } from "../../lib/utils";
 import { BookMarked } from "lucide-react";
 import type { Material, Lesson, Batch, Role } from "../../lib/types";
+
 
 interface MaterialsPageProps {
   materials: Material[];
@@ -16,28 +17,35 @@ interface MaterialsPageProps {
   role: Role;
 }
 
+
+
 export function MaterialsPage({ materials, setMaterials, lessons, batches, role }: MaterialsPageProps) {
   const [modal, setModal] = useState(false);
+  const [updateModal, setUpdateModal] = useState(false);
   const [batchFilter, setBatchFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [form, setForm] = useState<Partial<Material>>({ type: "pdf", batchIds: [], accessCount: 0 });
-
+  const [form, setForm] = useState<Partial<Material>>({ contentType: "pdf", batchIds: [], accessCount: 0 });
+  const contentTypes = [
+    { value: "recording", label: "Rec", icon: Video },
+    { value: "note", label: "Note", icon: FileText },
+    { value: "paper", label: "Paper", icon: ScrollText },
+  ];
   const filtered = materials.filter((m) => {
     const matchBatch = batchFilter === "all" || m.batchIds.includes(batchFilter);
-    const matchType = typeFilter === "all" || m.type === typeFilter;
+    const matchType = typeFilter === "all" || m.contentType === typeFilter;
     return matchBatch && matchType;
   });
 
   const save = () => {
     setMaterials((p) => [...p, { id: `mat${Date.now()}`, ...form, uploadDate: new Date().toISOString().split("T")[0] } as Material]);
     setModal(false);
-    setForm({ type: "pdf", batchIds: [], accessCount: 0 });
+    setForm({ contentType: "pdf", batchIds: [], accessCount: 0 });
   };
 
   const typeIcon = (t: string) =>
     t === "pdf" ? <FileText className="w-4 h-4 text-red-500" />
-    : t === "video" ? <Video className="w-4 h-4 text-blue-500" />
-    : <LinkIcon className="w-4 h-4 text-emerald-500" />;
+      : t === "video" ? <Video className="w-4 h-4 text-blue-500" />
+        : <LinkIcon className="w-4 h-4 text-emerald-500" />;
 
   return (
     <div className="space-y-5">
@@ -74,10 +82,10 @@ export function MaterialsPage({ materials, setMaterials, lessons, batches, role 
         ) : filtered.map((mat) => {
           const lesson = lessons.find((l) => l.id === mat.lessonId);
           return (
-            <Card key={mat.id} className="p-4">
+            <Card key={mat.id} onClick={() => setUpdateModal(true)} className="p-4 hover:bg-muted transition-colors cursor-pointer">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0">
-                  {typeIcon(mat.type)}
+                  {typeIcon(mat.contentType)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground">{mat.title}</p>
@@ -91,8 +99,8 @@ export function MaterialsPage({ materials, setMaterials, lessons, batches, role 
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  <Badge v={mat.type === "pdf" ? "danger" : mat.type === "video" ? "info" : "success"}>
-                    {mat.type.toUpperCase()}
+                  <Badge v={mat.contentType === "pdf" ? "danger" : mat.contentType === "video" ? "info" : "success"}>
+                    {mat.contentType.toUpperCase()}
                   </Badge>
                   <p className="text-xs text-muted-foreground">{fmtDate(mat.uploadDate)}</p>
                 </div>
@@ -104,16 +112,31 @@ export function MaterialsPage({ materials, setMaterials, lessons, batches, role 
 
       <Modal open={modal} onClose={() => setModal(false)} title="Upload Material">
         <div className="space-y-4">
+          <div className="mt-2 flex overflow-hidden rounded-2xl gap-3 border border-outline/20 bg-surface-container p-1">
+            {contentTypes.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    contentType: value as Material["contentType"],
+                  }))
+                }
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium transition-colors
+        ${form.contentType === value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-background"
+                  }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
           <div><FLabel>Title</FLabel><Input value={form.title || ""} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Material title" /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <FLabel>Type</FLabel>
-              <Sel value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "pdf" | "video" | "link" }))}>
-                <option value="pdf">PDF Notes</option>
-                <option value="video">Video Recording</option>
-                <option value="link">External Link</option>
-              </Sel>
-            </div>
+          <div><FLabel>Description</FLabel><Input value={""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Material description" /></div>
+          <div className="grid grid-cols-1 gap-3">
             <div>
               <FLabel>Lesson</FLabel>
               <Sel value={form.lessonId || ""} onChange={(e) => setForm((f) => ({ ...f, lessonId: e.target.value }))}>
@@ -122,36 +145,93 @@ export function MaterialsPage({ materials, setMaterials, lessons, batches, role 
               </Sel>
             </div>
           </div>
-          <div><FLabel>URL / File Path</FLabel><Input value={form.url || ""} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://… or file path" /></div>
-          <div>
-            <FLabel>Assign to Batches</FLabel>
-            <div className="flex flex-wrap gap-2">
-              {batches.filter((b) => b.active).map((b) => (
-                <label key={b.id} className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={(form.batchIds || []).includes(b.id)}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        batchIds: e.target.checked
-                          ? [...(f.batchIds || []), b.id]
-                          : (f.batchIds || []).filter((x) => x !== b.id),
-                      }))
-                    }
-                  />
-                  <span className="text-sm">{b.name}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div><FLabel>Expiry Date (optional)</FLabel><Input type="date" value={form.expiryDate || ""} onChange={(e) => setForm((f) => ({ ...f, expiryDate: e.target.value || null }))} /></div>
+          <div><FLabel>URL / File Path</FLabel><Input type="file" value={form.url || ""} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://… or file path" /></div>
+
+
+
           <div className="flex justify-end gap-2">
             <Btn v="outline" onClick={() => setModal(false)}>Cancel</Btn>
             <Btn onClick={save}><Upload className="w-4 h-4" />Upload</Btn>
           </div>
         </div>
       </Modal>
+
+
+      <Modal open={updateModal} onClose={() => setUpdateModal(false)} title="Update Material">
+        <div className="space-y-4">
+          <div className="mt-2 flex overflow-hidden rounded-2xl gap-3 border border-outline/20 bg-surface-container p-1">
+            {contentTypes.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    contentType: value as Material["contentType"],
+                  }))
+                }
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium transition-colors
+        ${form.contentType === value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-background"
+                  }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+          <div><FLabel>Title</FLabel><Input value={form.title || ""} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Material title" /></div>
+          <div><FLabel>Description</FLabel><Input value={""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Material description" /></div>
+          <div className="grid grid-cols-1 gap-3">
+            <div>
+              <FLabel>Lesson</FLabel>
+              <Sel value={form.lessonId || ""} onChange={(e) => setForm((f) => ({ ...f, lessonId: e.target.value }))}>
+                <option value="">Select lesson</option>
+                {lessons.map((l) => <option key={l.id} value={l.id}>{l.title}</option>)}
+              </Sel>
+            </div>
+          </div>
+
+          <div>
+            <FLabel>Grant Access</FLabel>
+
+            <div className="mt-2 grid grid-cols-3 gap-3">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" className="h-4 w-4" />
+                <span className="text-sm">Batch 22</span>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input type="checkbox" className="h-4 w-4" />
+                <span className="text-sm">Batch 23</span>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input type="checkbox" className="h-4 w-4" />
+                <span className="text-sm">Batch 24</span>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input type="checkbox" className="h-4 w-4" />
+                <span className="text-sm">Weekend Batch</span>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input type="checkbox" className="h-4 w-4" />
+                <span className="text-sm">Online Batch</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-10">
+            <Btn v="outline" onClick={() => setModal(false)}>Cancel</Btn>
+            <Btn v="danger" onClick={() => setModal(false)}>Delete Material</Btn>
+            <Btn onClick={save}><Pen className="w-4 h-4" />Update</Btn>
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
 }

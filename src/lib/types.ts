@@ -86,9 +86,10 @@ export interface Mark {
 }
 
 export interface Material {
+  type(type: any): import("react").ReactNode;
   id: string;
   title: string;
-  type: "pdf" | "video" | "link";
+  contentType: "pdf" | "video" | "link";
   url: string;
   batchIds: string[];
   lessonId: string;
@@ -97,13 +98,13 @@ export interface Material {
   accessCount: number;
 }
 
-export interface Lesson {
-  id: string;
-  title: string;
-  topic: string;
-  batchIds: string[];
-  date: string;
-}
+// export interface Lesson {
+//   id: string;
+//   title: string;
+//   topic: string;
+//   batchIds: string[];
+//   date: string;
+// }
 
 export interface CMessage {
   id: string;
@@ -123,7 +124,7 @@ export interface AppState {
   papers: Paper[];
   marks: Mark[];
   materials: Material[];
-  lessons: Lesson[];
+  // lessons: Lesson[];
   messages: CMessage[];
   users: AppUser[];
   setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
@@ -133,7 +134,7 @@ export interface AppState {
   setPapers: React.Dispatch<React.SetStateAction<Paper[]>>;
   setMarks: React.Dispatch<React.SetStateAction<Mark[]>>;
   setMaterials: React.Dispatch<React.SetStateAction<Material[]>>;
-  setLessons: React.Dispatch<React.SetStateAction<Lesson[]>>;
+  // setLessons: React.Dispatch<React.SetStateAction<Lesson[]>>;
   setMessages: React.Dispatch<React.SetStateAction<CMessage[]>>;
   setUsers: React.Dispatch<React.SetStateAction<AppUser[]>>;
 }

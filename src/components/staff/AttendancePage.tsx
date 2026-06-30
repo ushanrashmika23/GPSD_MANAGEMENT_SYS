@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search, CheckCircle, XCircle, Clock, Check, X, BarChart2, CalendarCheck, Users, PlusCircle, QrCodeIcon } from "lucide-react";
-import { Btn, Sel, Input, Card, Badge, Avatar, EmptyState } from "../ui";
+import { Btn, Sel, Input, Card, Badge, Avatar, EmptyState, Modal, FLabel } from "../ui";
 import { fmtDate } from "../../lib/utils";
 import { cn } from "../../lib/utils";
 import { QrScanner } from "../../lib/QrScanner";
@@ -23,6 +23,8 @@ export function AttendancePage({ attendance, setAttendance, students, batches, r
   const [scannedCode, setScannedCode] = useState("");
   const [lastScannedAt, setLastScannedAt] = useState<string | null>(null);
   const [scanMessage, setScanMessage] = useState("No QR code scanned yet");
+  const [paperModal, setPaperModal] = useState(false);
+  const [form, setForm] = useState({ name: "", batchId: "", date: new Date().toISOString().split("T")[0], totalMarks: 100 });
 
   const bStudents = useMemo(
     () => students.filter((s) => s.batchIds.includes(batchId) && s.active),
@@ -132,7 +134,7 @@ export function AttendancePage({ attendance, setAttendance, students, batches, r
               </Card>
             ))}
 
-            <Card className="min-w-[220px] p-2 bg-transparent cursor-pointer border-none group">
+            <Card onClick={() => setPaperModal(true)} className="min-w-[220px] p-2 bg-transparent cursor-pointer border-none group">
               <div className="h-full min-h-[110px] flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-muted transition-all duration-200 hover:border-primary/50">
                 <PlusCircle className="w-5 h-5 text-muted-foreground/30 transition-all group-hover:scale-110 group-hover:text-primary/80" />
                 <p className="font-semibold text-sm text-muted-foreground/50 group-hover:text-primary/80">
@@ -314,7 +316,31 @@ export function AttendancePage({ attendance, setAttendance, students, batches, r
           </Card>
         </div>
       )}
+
+
+      <Modal open={paperModal} onClose={() => setPaperModal(false)} title="Create New Class Day">
+        <div className="space-y-4">
+          <div>
+            <FLabel>Batch</FLabel>
+            <Sel className="w-48" value={form.batchId || ""} onChange={(e) => setForm((f) => ({ ...f, batchId: e.target.value }))}>
+              {batches.filter((b) => b.active).map((b) => (<option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </Sel>
+          </div>
+          <div className="grid grid-cols-1 mb-10 gap-3">
+            <div><FLabel>Date</FLabel><Input type="date" value={form.date || ""} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Btn v="outline" onClick={() => setPaperModal(false)}>Cancel</Btn>
+            <Btn onClick={() => { }}>Create Day</Btn>
+          </div>
+        </div>
+      </Modal>
+
+
+
     </div>
+
   );
 }
 

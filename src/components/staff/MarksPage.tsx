@@ -4,7 +4,7 @@ import { Badge, Btn, Input, Sel, Modal, Card, Avatar } from "../ui";
 import { FLabel } from "../ui";
 import { fmtDate } from "../../lib/utils";
 import { cn } from "../../lib/utils";
-import type { Paper, Mark, Student, Batch, Role } from "../../lib/types";
+import type { Paper, Mark, Student, Batch, Role, Material } from "../../lib/types";
 
 interface MarksPageProps {
   papers: Paper[];
@@ -14,9 +14,10 @@ interface MarksPageProps {
   students: Student[];
   batches: Batch[];
   role: Role;
+  materials: Material[];
 }
 
-export function MarksPage({ papers, setPapers, marks, setMarks, students, batches, role }: MarksPageProps) {
+export function MarksPage({ papers, setPapers, marks, setMarks, students, batches, role, materials }: MarksPageProps) {
   const [view, setView] = useState<"papers" | "enter" | "rank">("papers");
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
   const [batchFilter, setBatchFilter] = useState("all");
@@ -185,8 +186,8 @@ export function MarksPage({ papers, setPapers, marks, setMarks, students, batche
                 {marksForm[s.id] && (
                   <Badge v={
                     +marksForm[s.id] / selectedPaper.totalMarks >= 0.7 ? "success"
-                    : +marksForm[s.id] / selectedPaper.totalMarks >= 0.5 ? "warning"
-                    : "danger"
+                      : +marksForm[s.id] / selectedPaper.totalMarks >= 0.5 ? "warning"
+                        : "danger"
                   }>
                     {Math.round(+marksForm[s.id] / selectedPaper.totalMarks * 100)}%
                   </Badge>
@@ -239,17 +240,35 @@ export function MarksPage({ papers, setPapers, marks, setMarks, students, batche
 
       <Modal open={paperModal} onClose={() => setPaperModal(false)} title="Create New Paper">
         <div className="space-y-4">
-          <div>
+          {/* <div>
             <FLabel>Paper Name</FLabel>
             <Input value={form.name || ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Term Test 2 — Pure Mathematics" />
+          </div> */}
+          <div>
+            <FLabel>Title</FLabel>
+           <Input type="text" value={ ""} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Term Test 2 — Pure Mathematics" />
+          </div>
+          <div>
+            <FLabel>Batch</FLabel>
+            <Sel className="w-48" value={form.batchId || ""} onChange={(e) => setForm((f) => ({ ...f, batchId: e.target.value }))}>
+              {batches.filter((b) => b.active).map((b) => (<option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </Sel>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <FLabel>Batch</FLabel>
-              <Sel value={form.batchId || ""} onChange={(e) => setForm((f) => ({ ...f, batchId: e.target.value }))}>
-                <option value="">Select batch</option>
-                {batches.filter((b) => b.active).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              <FLabel>Material</FLabel>
+              <Sel value={""} onChange={(e) => setForm((f) => ({ ...f, materialId: e.target.value }))}>
+                <option value="">Select material</option>
+                <option>Paper 001</option>
+                <option>Paper 002</option>
+                <option>Paper 003</option>
+
               </Sel>
+              {/* <Sel value={form.materialId || ""} onChange={(e) => setForm((f) => ({ ...f, materialId: e.target.value }))}>
+                <option value="">Select material</option>
+                {materials.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </Sel> */}
             </div>
             <div><FLabel>Date</FLabel><Input type="date" value={form.date || ""} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></div>
             <div><FLabel>Total Marks</FLabel><Input type="number" value={form.totalMarks || ""} onChange={(e) => setForm((f) => ({ ...f, totalMarks: +e.target.value }))} placeholder="100" /></div>
