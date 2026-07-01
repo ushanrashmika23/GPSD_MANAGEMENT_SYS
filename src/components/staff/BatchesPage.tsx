@@ -1,30 +1,69 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Edit2, Eye } from "lucide-react";
 import { Badge, Btn, Input, Sel, Modal, Card } from "../ui";
 import { Avatar } from "../ui";
 import { FLabel } from "../ui";
 import { fmtCur } from "../../lib/utils";
 import type { Batch, Student, Role } from "../../lib/types";
+import { getAllBatches, addBatch, updateBatch } from "../../api/apiCalls";
 
 interface BatchesPageProps {
-  batches: Batch[];
-  setBatches: React.Dispatch<React.SetStateAction<Batch[]>>;
   students: Student[];
   role: Role;
 }
 
-export function BatchesPage({ batches, setBatches, students, role }: BatchesPageProps) {
+export function BatchesPage({ students, role }: BatchesPageProps) {
   const [modal, setModal] = useState<"add" | "edit" | "view" | null>(null);
   const [selected, setSelected] = useState<Batch | null>(null);
   const [form, setForm] = useState<Partial<Batch>>({});
+  const [batches, setLocalBatches] = useState<Batch[]>([]);
 
-  const save = () => {
-    if (modal === "add") {
-      setBatches((p) => [...p, { id: `b${Date.now()}`, ...form, active: form.active ?? true } as Batch]);
-    } else if (selected) {
-      setBatches((p) => p.map((b) => (b.id === selected.id ? { ...b, ...form } as Batch : b)));
+  useEffect(() => {
+    fetchBatches();
+  }, []);
+
+  const save = async () => {
+    try {
+      const body = {
+        name: form.name,
+        examDate: form.examDate,
+        fee: form.fee,
+        startTime: form.startTime,
+        endTime: form.endTime,
+        active: form.active,
+        day: form.day,
+      };
+      if (modal === "add") {
+        await addBatch(body);
+      } else if (modal === "edit" && selected) {
+        await updateBatch(selected.id, body);
+      }
+      setModal(null);
+      fetchBatches();
+    } catch (error) {
+      console.error("Failed to save batch:", error);
     }
-    setModal(null);
+  };
+
+  const fetchBatches = async () => {
+    try {
+      const result = await getAllBatches();
+      // result.data.data is the batch array (backend wraps in nested { data: { data: [...], meta: {...} } })
+      const backendBatches = result?.data?.data ?? [];
+      const mapped: Batch[] = backendBatches.map((b: any) => ({
+        id: b.id,
+        name: b.name,
+        fee: b.class_fee,
+        startTime: b.start_time,
+        endTime: b.end_time,
+        endYear: b.exam_date,
+        active: b.is_active,
+        day: b.day,
+      }));
+      setLocalBatches(mapped);
+    } catch (error) {
+      console.error("Error fetching batches:", error);
+    }
   };
 
   const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -44,8 +83,8 @@ export function BatchesPage({ batches, setBatches, students, role }: BatchesPage
           </Sel>
         </div>
         <div>
-          <FLabel>End Year</FLabel>
-          <Input type="number" value={form.endYear || ""} onChange={(e) => setForm((f) => ({ ...f, endYear: +e.target.value }))} placeholder="2025" />
+          <FLabel>Exam  Date</FLabel>
+          <Input type="date" value={form.examDate || ""} onChange={(e) => setForm((f) => ({ ...f, examDate: e.target.value }))} />
         </div>
         <div>
           <FLabel>Start Time</FLabel>

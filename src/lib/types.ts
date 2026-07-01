@@ -30,7 +30,7 @@ export interface Batch {
   fee: number;
   startTime: string;
   endTime: string;
-  endYear: number;
+  examDate: string;   // "YYYY-MM-DD"
   active: boolean;
   day: string;
 }
