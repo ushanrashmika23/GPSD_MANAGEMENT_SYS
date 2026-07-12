@@ -1,74 +1,54 @@
-import { useEffect, useState } from "react";
-import { Plus, Edit2, Eye } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Plus, Edit2, Eye, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge, Btn, Input, Sel, Modal, Card } from "../ui";
 import { Avatar } from "../ui";
 import { FLabel } from "../ui";
 import { fmtCur } from "../../lib/utils";
 import type { Batch, Student, Role } from "../../lib/types";
 import { getAllBatches, addBatch, updateBatch } from "../../api/apiCalls";
+import Pagination from "../ui/Pagination";
 
 interface BatchesPageProps {
   students: Student[];
   role: Role;
 }
 
-export function BatchesPage({ students, role }: BatchesPageProps) {
-  const [modal, setModal] = useState<"add" | "edit" | "view" | null>(null);
-  const [selected, setSelected] = useState<Batch | null>(null);
-  const [form, setForm] = useState<Partial<Batch>>({});
-  const [batches, setLocalBatches] = useState<Batch[]>([]);
+/** Splits text by a search term and wraps matches in <mark> */
+function HighlightText({ text, term }: { text: string; term: string }) {
+  if (!term.trim()) return <>{text}</>;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.toLowerCase() === term.toLowerCase() ? (
+          <mark key={i} className="rounded-sm bg-amber-200 px-0.5 text-inherit dark:bg-amber-800/60">
+            {p}
+          </mark>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
+  );
+}
 
-  useEffect(() => {
-    fetchBatches();
-  }, []);
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-  const save = async () => {
-    try {
-      const body = {
-        name: form.name,
-        examDate: form.examDate,
-        fee: form.fee,
-        startTime: form.startTime,
-        endTime: form.endTime,
-        active: form.active,
-        day: form.day,
-      };
-      if (modal === "add") {
-        await addBatch(body);
-      } else if (modal === "edit" && selected) {
-        await updateBatch(selected.id, body);
-      }
-      setModal(null);
-      fetchBatches();
-    } catch (error) {
-      console.error("Failed to save batch:", error);
-    }
-  };
-
-  const fetchBatches = async () => {
-    try {
-      const result = await getAllBatches();
-      // result.data.data is the batch array (backend wraps in nested { data: { data: [...], meta: {...} } })
-      const backendBatches = result?.data?.data ?? [];
-      const mapped: Batch[] = backendBatches.map((b: any) => ({
-        id: b.id,
-        name: b.name,
-        fee: b.class_fee,
-        startTime: b.start_time,
-        endTime: b.end_time,
-        endYear: b.exam_date,
-        active: b.is_active,
-        day: b.day,
-      }));
-      setLocalBatches(mapped);
-    } catch (error) {
-      console.error("Error fetching batches:", error);
-    }
-  };
-
-  const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-  const BatchForm = () => (
+function BatchForm({
+  form,
+  setForm,
+  modal,
+  onSave,
+  onCancel,
+}: {
+  form: Partial<Batch>;
+  setForm: React.Dispatch<React.SetStateAction<Partial<Batch>>>;
+  modal: "add" | "edit" | "view" | null;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
@@ -106,11 +86,87 @@ export function BatchesPage({ students, role }: BatchesPageProps) {
         </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <Btn v="outline" onClick={() => setModal(null)}>Cancel</Btn>
-        <Btn onClick={save}>{modal === "add" ? "Create Batch" : "Save Changes"}</Btn>
+        <Btn v="outline" onClick={onCancel}>Cancel</Btn>
+        <Btn onClick={onSave}>{modal === "add" ? "Create Batch" : "Save Changes"}</Btn>
       </div>
     </div>
   );
+}
+
+export function BatchesPage({ students, role }: BatchesPageProps) {
+  const [modal, setModal] = useState<"add" | "edit" | "view" | null>(null);
+  const [selected, setSelected] = useState<Batch | null>(null);
+  const [form, setForm] = useState<Partial<Batch>>({});
+  const [batches, setLocalBatches] = useState<Batch[]>([]);
+  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, pageSize: 12, totalRecords: 0 });
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    setSearchInput(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearch(v);
+      setPagination((prev) => ({ ...prev, page: 1 }));
+    }, 300);
+  };
+
+  const fetchBatches = useCallback(async () => {
+    try {
+      const result = await getAllBatches(pagination.page, pagination.pageSize, search);
+      const backendBatches = result?.data?.data ?? [];
+      const meta = result?.data?.meta ?? {};
+      console.log(meta);
+      setPagination((prev) => {
+        const perPage = meta.per_page ?? prev.pageSize;
+        const lastPage = meta.last_page ?? (meta.total != null ? Math.max(1, Math.ceil(meta.total / perPage)) : prev.totalPages);
+        return { page: meta.current_page ?? prev.page, totalPages: lastPage, pageSize: perPage, totalRecords: meta.total ?? prev.totalRecords };
+      });
+      const mapped: Batch[] = backendBatches.map((b: any) => ({
+        id: b.id,
+        name: b.name,
+        fee: b.class_fee,
+        startTime: b.start_time,
+        endTime: b.end_time,
+        endYear: b.exam_date,
+        active: b.is_active,
+        day: b.day,
+      }));
+      setLocalBatches(mapped);
+    } catch (error) {
+      console.error("Error fetching batches:", error);
+    }
+  }, [pagination.page, pagination.pageSize, search]);
+
+  useEffect(() => {
+    fetchBatches();
+    console.log("fetched " + pagination.page);
+  }, [fetchBatches]);
+
+  const save = async () => {
+    try {
+      const body = {
+        name: form.name,
+        examDate: form.examDate,
+        fee: form.fee,
+        startTime: form.startTime,
+        endTime: form.endTime,
+        active: form.active,
+        day: form.day,
+      };
+      if (modal === "add") {
+        await addBatch(body);
+      } else if (modal === "edit" && selected) {
+        await updateBatch(selected.id, body);
+      }
+      setModal(null);
+      fetchBatches();
+    } catch (error) {
+      console.error("Failed to save batch:", error);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -126,14 +182,21 @@ export function BatchesPage({ students, role }: BatchesPageProps) {
         )}
       </div>
 
+      <Card className="p-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input className="pl-9" placeholder="Search batches…" value={searchInput} onChange={handleSearchChange} />
+        </div>
+      </Card>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {batches.map((b) => {
+        {[...batches].sort((a, b) => (a.active === b.active ? 0 : a.active ? -1 : 1)).map((b) => {
           const bStudents = students.filter((s) => s.batchIds.includes(b.id) && s.active);
           return (
             <Card key={b.id} className="p-5">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="font-semibold text-foreground">{b.name}</h3>
+                  <h3 className="font-semibold text-foreground"><HighlightText text={b.name} term={search} /></h3>
                   <p className="text-xs text-muted-foreground mt-0.5">{b.day} · {b.startTime} – {b.endTime}</p>
                 </div>
                 <Badge v={b.active ? "success" : "muted"}>{b.active ? "Active" : "Inactive"}</Badge>
@@ -163,8 +226,11 @@ export function BatchesPage({ students, role }: BatchesPageProps) {
         })}
       </div>
 
-      <Modal open={modal === "add"} onClose={() => setModal(null)} title="Create New Batch"><BatchForm /></Modal>
-      <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Edit Batch"><BatchForm /></Modal>
+      <Pagination page={pagination.page} totalPages={pagination.totalPages} pageSize={pagination.pageSize} totalRecords={pagination.totalRecords} setPagination={setPagination} />
+
+
+      <Modal open={modal === "add"} onClose={() => setModal(null)} title="Create New Batch"><BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} /></Modal>
+      <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Edit Batch"><BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} /></Modal>
 
       <Modal open={modal === "view" && !!selected} onClose={() => setModal(null)} title={`${selected?.name} — Students`} wide>
         {selected && (

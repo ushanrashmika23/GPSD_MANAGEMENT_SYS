@@ -1,7 +1,7 @@
 import { cn } from "../../lib/utils";
 
 type BtnVariant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "accent";
-type BtnSize = "xs" | "sm" | "md" | "lg";
+type BtnSize = "xs" | "sm" | "md" | "lg" | "icon";
 
 const vStyles: Record<BtnVariant, string> = {
   primary: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
@@ -17,6 +17,7 @@ const sStyles: Record<BtnSize, string> = {
   sm: "px-3 py-1.5 text-xs",
   md: "px-4 py-2 text-sm",
   lg: "px-5 py-2.5 text-sm",
+   icon: "h-10 w-10 p-0 justify-center"
 };
 
 export interface BtnProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
