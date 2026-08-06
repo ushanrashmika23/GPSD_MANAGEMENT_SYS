@@ -130,5 +130,210 @@ const deleteBatch = async (batchId: string): Promise<any> => {
     }
 };
 
+//================================ALL CALLS FOR MANIPULATING STUDENTS====================================================
 
-export { getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch };
+const addStudent = async (studentData: any): Promise<any> => {
+    const data = {
+        email: studentData.email,
+        password: studentData.password,
+        callUpNo: studentData.callupNo,
+        firstName: studentData.firstName,
+        lastName: studentData.lastName,
+        school: studentData.school,
+        address: studentData.address,
+        mobile: studentData.mobile,
+        parentName: studentData.parentName,
+        parentMobile: studentData.parentMobile,
+        batchId: studentData.batchId,
+    };
+
+    try {
+        const response = await api.post("/students", data);
+        return response.data;
+    } catch (error) {
+        console.error("Error adding student:", error);
+        throw error;
+    }
+}
+
+const getAllStudents = async (page: number = 1, limit: number = 50, search: string = "", batchId: string = ""): Promise<any> => {
+    try {
+        const response = await api.get(`/students?page=${page}&limit=${limit}&search=${search}&batch_id=${batchId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching students:", error);
+        throw error;
+    }
+}
+
+const getStudentById = async (studentId: string): Promise<any> => {
+    try {
+        const response = await api.get(`/students/${studentId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching student by ID:", error);
+        throw error;
+    }
+}
+
+const updateStudent = async (studentId: string, studentData: any): Promise<any> => {
+    const data: Record<string, any> = {
+        firstName: studentData.firstName,
+        lastName: studentData.lastName,
+        mobile: studentData.mobile,
+        address: studentData.address,
+        callUpNo: studentData.callupNo,
+        school: studentData.school,
+        parentName: studentData.parentName,
+        parentMobile: studentData.parentMobile,
+        batchId: studentData.batchId ?? studentData.batchIds?.[0],
+    };
+    // Only include isActive if explicitly set (boolean)
+    if (typeof studentData.active === "boolean") {
+        data.isActive = studentData.active;
+    }
+
+    try {
+        const response = await api.put(`/students/${studentId}`, data);
+        return response.data;
+    } catch (error) {
+        console.error("Error updating student:", error);
+        throw error;
+    }
+}
+
+const deleteStudent = async (studentId: string): Promise<any> => {
+    try {
+        const response = await api.delete(`/students/${studentId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error deleting student:", error);
+        throw error;
+    }
+}
+
+
+//================================ALL CALLS FOR ATTENDANCE====================================================
+
+const getTodayClasses = async (day: string = ""): Promise<any> => {
+    try {
+        const response = await api.get(`/attendance/today?day=${day}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching today classes:", error);
+        throw error;
+    }
+};
+
+const createNewDay = async (date: string, batchId: string): Promise<any> => {
+    try {
+        const response = await api.post("/attendance/new-day", { date, batch_id: batchId });
+        return response.data;
+    } catch (error) {
+        console.error("Error creating new day:", error);
+        throw error;
+    }
+};
+
+const markAttendance = async (callUpNo: string): Promise<any> => {
+    try {
+        const response = await api.post("/attendance/mark-attendance", { call_up_no: callUpNo });
+        return response.data;
+    } catch (error) {
+        console.error("Error marking attendance:", error);
+        throw error;
+    }
+};
+
+
+//================================ALL CALLS FOR MANIPULATING PAYMENTS====================================================
+
+const getAllPayments = async (page: number = 1, limit: number = 500, search: string = ""): Promise<any> => {
+    try {
+        const response = await api.get(`/fees/payments?page=${page}&limit=${limit}&search=${search}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching payments:", error);
+        throw error;
+    }
+};
+
+const createPayment = async (paymentData: { amount: number; month: string; call_up_no: string }): Promise<any> => {
+    try {
+        const response = await api.post("/fees/payments", {
+            amount: paymentData.amount,
+            month: paymentData.month,
+            call_up_no: paymentData.call_up_no,
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Error creating payment:", error);
+        throw error;
+    }
+};
+
+const getStudentPaymentData = async (callUpNo: string): Promise<any> => {
+    try {
+        const response = await api.get(`/fees/payments/student/${callUpNo}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching student payment data:", error);
+        throw error;
+    }
+};
+
+const deletePayment = async (paymentId: number): Promise<any> => {
+    try {
+        const response = await api.delete(`/fees/payments/${paymentId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error deleting payment:", error);
+        throw error;
+    }
+};
+
+//================================ALL CALLS FOR MANIPULATING MATERIALS====================================================
+
+const getAllMaterials = async (page: number = 1, limit: number = 12, search: string = "", batchId: string = "", contentType: string = ""): Promise<any> => {
+    try {
+        const response = await api.get(`/materials?page=${page}&limit=${limit}&search=${search}&batch_id=${batchId}&content_type=${contentType}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching materials:", error);
+        throw error;
+    }
+};
+
+const addMaterial = async (formData: FormData): Promise<any> => {
+    try {
+        const response = await api.post("/materials", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Error adding material:", error);
+        throw error;
+    }
+};
+
+const updateMaterial = async (materialId: string, data: Record<string, any>): Promise<any> => {
+    try {
+        const response = await api.put(`/materials/${materialId}`, data);
+        return response.data;
+    } catch (error) {
+        console.error("Error updating material:", error);
+        throw error;
+    }
+};
+
+const deleteMaterial = async (materialId: string): Promise<any> => {
+    try {
+        const response = await api.delete(`/materials/${materialId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error deleting material:", error);
+        throw error;
+    }
+};
+
+export { getAllStudents, getStudentById, updateStudent, deleteStudent, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial };

@@ -39,6 +39,7 @@ export interface Student {
   id: string;
   callupNo: string;
   fullName: string;
+  email: string;
   school: string;
   address: string;
   nic: string;
@@ -86,13 +87,16 @@ export interface Mark {
 }
 
 export interface Material {
-  type(type: any): import("react").ReactNode;
   id: string;
   title: string;
-  contentType: "pdf" | "video" | "link";
+  description?: string;
+  type: "DOCUMENT" | "VIDEO";
   url: string;
   batchIds: string[];
+  batchNames: { id: string; name: string }[];
   lessonId: string;
+  lessonName?: string;
+  lessonType?: string;
   uploadDate: string;
   expiryDate: string | null;
   accessCount: number;

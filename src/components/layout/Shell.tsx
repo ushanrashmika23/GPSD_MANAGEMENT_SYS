@@ -54,9 +54,7 @@ export function Shell({ user, onLogout, state }: ShellProps) {
       case "students":
         return (
           <StudentsPage
-            students={state.students}
             batches={state.batches}
-            setStudents={state.setStudents}
             attendance={state.attendance}
             payments={state.payments}
             marks={state.marks}
@@ -75,9 +73,6 @@ export function Shell({ user, onLogout, state }: ShellProps) {
       case "attendance":
         return (
           <AttendancePage
-            attendance={state.attendance}
-            setAttendance={state.setAttendance}
-            students={state.students}
             batches={state.batches}
             role={role}
           />
@@ -107,13 +102,7 @@ export function Shell({ user, onLogout, state }: ShellProps) {
         );
       case "materials":
         return (
-          <MaterialsPage
-            materials={state.materials}
-            setMaterials={state.setMaterials}
-            lessons={state.lessons}
-            batches={state.batches}
-            role={role}
-          />
+          <MaterialsPage role={role} />
         );
       case "lessons":
         return (
