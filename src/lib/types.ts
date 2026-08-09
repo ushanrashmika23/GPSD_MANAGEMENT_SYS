@@ -33,6 +33,7 @@ export interface Batch {
   examDate: string;   // "YYYY-MM-DD"
   active: boolean;
   day: string;
+  studentCount?: number;
 }
 
 export interface Student {

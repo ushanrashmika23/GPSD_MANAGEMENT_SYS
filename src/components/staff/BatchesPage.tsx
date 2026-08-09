@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, Edit2, Eye, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { Badge, Btn, Input, Sel, Modal, Card } from "../ui";
-import { Avatar } from "../ui";
+import { Plus, Edit2, Search, Trash2 } from "lucide-react";
+import { Badge, Btn, Input, Sel, Modal, Card, ConfirmDialog } from "../ui";
 import { FLabel } from "../ui";
-import { fmtCur } from "../../lib/utils";
+import { fmtCur, cn } from "../../lib/utils";
 import type { Batch, Student, Role } from "../../lib/types";
-import { getAllBatches, addBatch, updateBatch } from "../../api/apiCalls";
+import { getAllBatches, addBatch, updateBatch, deleteBatch } from "../../api/apiCalls";
 import Pagination from "../ui/Pagination";
 
 interface BatchesPageProps {
@@ -41,12 +40,14 @@ function BatchForm({
   modal,
   onSave,
   onCancel,
+  saving,
 }: {
   form: Partial<Batch>;
   setForm: React.Dispatch<React.SetStateAction<Partial<Batch>>>;
-  modal: "add" | "edit" | "view" | null;
+  modal: "add" | "edit" | null;
   onSave: () => void;
   onCancel: () => void;
+  saving: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -63,7 +64,7 @@ function BatchForm({
           </Sel>
         </div>
         <div>
-          <FLabel>Exam  Date</FLabel>
+          <FLabel>Exam Date</FLabel>
           <Input type="date" value={form.examDate || ""} onChange={(e) => setForm((f) => ({ ...f, examDate: e.target.value }))} />
         </div>
         <div>
@@ -79,28 +80,49 @@ function BatchForm({
           <Input type="number" value={form.fee || ""} onChange={(e) => setForm((f) => ({ ...f, fee: +e.target.value }))} placeholder="3500" />
         </div>
         <div className="flex items-end pb-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.active ?? true} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} />
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={form.active ?? true}
+              onClick={() => setForm((f) => ({ ...f, active: !(f.active ?? true) }))}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                (form.active ?? true) ? "bg-emerald-500" : "bg-muted/60",
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none block h-5 w-5 rounded-full bg-white shadow transition-transform",
+                  (form.active ?? true) ? "translate-x-5" : "translate-x-0",
+                )}
+              />
+            </button>
             <span className="text-sm font-medium">Active Batch</span>
           </label>
         </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <Btn v="outline" onClick={onCancel}>Cancel</Btn>
-        <Btn onClick={onSave}>{modal === "add" ? "Create Batch" : "Save Changes"}</Btn>
+        <Btn v="outline" onClick={onCancel} disabled={saving}>Cancel</Btn>
+        <Btn onClick={onSave} disabled={saving}>
+          {saving ? "Saving…" : modal === "add" ? "Create Batch" : "Save Changes"}
+        </Btn>
       </div>
     </div>
   );
 }
 
-export function BatchesPage({ students, role }: BatchesPageProps) {
-  const [modal, setModal] = useState<"add" | "edit" | "view" | null>(null);
+export function BatchesPage({ role }: BatchesPageProps) {
+  const [modal, setModal] = useState<"add" | "edit" | null>(null);
   const [selected, setSelected] = useState<Batch | null>(null);
   const [form, setForm] = useState<Partial<Batch>>({});
   const [batches, setLocalBatches] = useState<Batch[]>([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, pageSize: 12, totalRecords: 0 });
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Batch | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,21 +140,22 @@ export function BatchesPage({ students, role }: BatchesPageProps) {
       const result = await getAllBatches(pagination.page, pagination.pageSize, search);
       const backendBatches = result?.data?.data ?? [];
       const meta = result?.data?.meta ?? {};
-      console.log(meta);
-      setPagination((prev) => {
-        const perPage = meta.per_page ?? prev.pageSize;
-        const lastPage = meta.last_page ?? (meta.total != null ? Math.max(1, Math.ceil(meta.total / perPage)) : prev.totalPages);
-        return { page: meta.current_page ?? prev.page, totalPages: lastPage, pageSize: perPage, totalRecords: meta.total ?? prev.totalRecords };
-      });
+      setPagination((prev) => ({
+        page: meta.page ?? prev.page,
+        totalPages: meta.pages ?? prev.totalPages,
+        pageSize: meta.limit ?? prev.pageSize,
+        totalRecords: meta.total ?? prev.totalRecords,
+      }));
       const mapped: Batch[] = backendBatches.map((b: any) => ({
         id: b.id,
         name: b.name,
         fee: b.class_fee,
         startTime: b.start_time,
         endTime: b.end_time,
-        endYear: b.exam_date,
+        examDate: b.exam_date ? (typeof b.exam_date === "string" ? b.exam_date : b.exam_date.split("T")[0]) : "",
         active: b.is_active,
         day: b.day,
+        studentCount: b._count?.student ?? 0,
       }));
       setLocalBatches(mapped);
     } catch (error) {
@@ -142,10 +165,10 @@ export function BatchesPage({ students, role }: BatchesPageProps) {
 
   useEffect(() => {
     fetchBatches();
-    console.log("fetched " + pagination.page);
   }, [fetchBatches]);
 
   const save = async () => {
+    setSaving(true);
     try {
       const body = {
         name: form.name,
@@ -165,6 +188,22 @@ export function BatchesPage({ students, role }: BatchesPageProps) {
       fetchBatches();
     } catch (error) {
       console.error("Failed to save batch:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteBatch(deleteTarget.id);
+      setDeleteTarget(null);
+      fetchBatches();
+    } catch (error) {
+      console.error("Failed to delete batch:", error);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -190,69 +229,67 @@ export function BatchesPage({ students, role }: BatchesPageProps) {
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[...batches].sort((a, b) => (a.active === b.active ? 0 : a.active ? -1 : 1)).map((b) => {
-          const bStudents = students.filter((s) => s.batchIds.includes(b.id) && s.active);
-          return (
-            <Card key={b.id} className="p-5">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="font-semibold text-foreground"><HighlightText text={b.name} term={search} /></h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{b.day} · {b.startTime} – {b.endTime}</p>
-                </div>
-                <Badge v={b.active ? "success" : "muted"}>{b.active ? "Active" : "Inactive"}</Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="bg-muted/50 rounded-lg p-3">
-                  <p className="text-lg font-bold font-mono text-foreground">{bStudents.length}</p>
-                  <p className="text-xs text-muted-foreground">Students</p>
-                </div>
-                <div className="bg-muted/50 rounded-lg p-3">
-                  <p className="text-lg font-bold font-mono text-foreground">{fmtCur(b.fee)}</p>
-                  <p className="text-xs text-muted-foreground">Monthly Fee</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Btn v="outline" sz="sm" className="flex-1 justify-center" onClick={() => { setSelected(b); setModal("view"); }}>
-                  <Eye className="w-3.5 h-3.5" />Students
-                </Btn>
-                {role === "admin" && (
-                  <Btn v="ghost" sz="sm" onClick={() => { setSelected(b); setForm({ ...b }); setModal("edit"); }}>
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </Btn>
+        {[...batches].sort((a, b) => (a.active === b.active ? 0 : a.active ? -1 : 1)).map((b) => (
+          <Card key={b.id} className="p-5">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-foreground"><HighlightText text={b.name} term={search} /></h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{b.day} · {b.startTime} – {b.endTime}</p>
+                {b.examDate && (
+                  <p className="text-xs text-muted-foreground/70 mt-0.5">Exam: {b.examDate}</p>
                 )}
               </div>
-            </Card>
-          );
-        })}
+              <Badge v={b.active ? "success" : "muted"}>{b.active ? "Active" : "Inactive"}</Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="bg-muted/50 rounded-lg p-3">
+                <p className="text-lg font-bold font-mono text-foreground">{b.studentCount ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Students</p>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-3">
+                <p className="text-lg font-bold font-mono text-foreground">{fmtCur(b.fee)}</p>
+                <p className="text-xs text-muted-foreground">Monthly Fee</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {role === "admin" && (
+                <>
+                  <Btn v="outline" sz="sm" className="flex-1 justify-center" onClick={() => { setSelected(b); setForm({ ...b }); setModal("edit"); }}>
+                    <Edit2 className="w-3.5 h-3.5" /> Edit
+                  </Btn>
+                  <Btn v="outline" sz="sm" className="justify-center text-muted-foreground hover:text-red-600 hover:border-red-300" onClick={() => setDeleteTarget(b)}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Btn>
+                </>
+              )}
+            </div>
+          </Card>
+        ))}
       </div>
 
       <Pagination page={pagination.page} totalPages={pagination.totalPages} pageSize={pagination.pageSize} totalRecords={pagination.totalRecords} setPagination={setPagination} />
 
-
-      <Modal open={modal === "add"} onClose={() => setModal(null)} title="Create New Batch"><BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} /></Modal>
-      <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Edit Batch"><BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} /></Modal>
-
-      <Modal open={modal === "view" && !!selected} onClose={() => setModal(null)} title={`${selected?.name} — Students`} wide>
-        {selected && (
-          <div>
-            <p className="text-sm text-muted-foreground mb-4">
-              {students.filter((s) => s.batchIds.includes(selected.id) && s.active).length} active students in this batch
-            </p>
-            <div className="space-y-2">
-              {students.filter((s) => s.batchIds.includes(selected.id)).map((s) => (
-                <div key={s.id} className="flex items-center gap-3 p-3 rounded-xl bg-muted/40">
-                  <Avatar name={s.fullName} size="sm" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{s.fullName}</p>
-                    <p className="text-xs text-muted-foreground">{s.callupNo} · {s.school}</p>
-                  </div>
-                  <Badge v={s.active ? "success" : "danger"}>{s.active ? "Active" : "Inactive"}</Badge>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+      <Modal open={modal === "add"} onClose={() => setModal(null)} title="Create New Batch">
+        <BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} saving={saving} />
       </Modal>
+      <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Edit Batch">
+        <BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} saving={saving} />
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Batch"
+        message={
+          <span>
+            Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone.
+          </span>
+        }
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
