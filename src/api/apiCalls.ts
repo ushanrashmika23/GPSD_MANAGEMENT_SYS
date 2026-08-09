@@ -213,6 +213,17 @@ const deleteStudent = async (studentId: string): Promise<any> => {
 }
 
 
+const resetStudentPassword = async (studentId: string, newPassword: string): Promise<any> => {
+    try {
+        const response = await api.put(`/students/${studentId}/reset-password`, { password: newPassword });
+        return response.data;
+    } catch (error) {
+        console.error("Error resetting student password:", error);
+        throw error;
+    }
+}
+
+
 //================================ALL CALLS FOR ATTENDANCE====================================================
 
 const getTodayClasses = async (day: string = ""): Promise<any> => {
@@ -304,10 +315,12 @@ const getAllMaterials = async (page: number = 1, limit: number = 12, search: str
     }
 };
 
-const addMaterial = async (formData: FormData): Promise<any> => {
+const addMaterial = async (formData: FormData, onUploadProgress?: (progressEvent: ProgressEvent) => void): Promise<any> => {
     try {
         const response = await api.post("/materials", formData, {
             headers: { "Content-Type": "multipart/form-data" },
+            timeout: 120000, // 2 minutes for file uploads
+            onUploadProgress,
         });
         return response.data;
     } catch (error) {
@@ -336,4 +349,98 @@ const deleteMaterial = async (materialId: string): Promise<any> => {
     }
 };
 
-export { getAllStudents, getStudentById, updateStudent, deleteStudent, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial };
+//================================ALL CALLS FOR MATERIAL ACCESS====================================================
+
+const getMaterialAccesses = async (materialId: string): Promise<any> => {
+    try {
+        const response = await api.get(`/access/${materialId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching material accesses:", error);
+        throw error;
+    }
+};
+
+const grantBatchAccess = async (material_id: string, batch_id: string, expiry_date: string): Promise<any> => {
+    try {
+        const response = await api.post("/access/grant", { material_id, batch_id, expiry_date });
+        return response.data;
+    } catch (error) {
+        console.error("Error granting batch access:", error);
+        throw error;
+    }
+};
+
+const revokeBatchAccess = async (access_id: string): Promise<any> => {
+    try {
+        const response = await api.post("/access/revoke", { access_id });
+        return response.data;
+    } catch (error) {
+        console.error("Error revoking batch access:", error);
+        throw error;
+    }
+};
+
+//================================ALL CALLS FOR MARKS / PAPERS====================================================
+
+const getAllPapers = async (page: number = 1, limit: number = 12, batchId: string = ""): Promise<any> => {
+    try {
+        const response = await api.get(`/marks/papers?page=${page}&limit=${limit}&batch_id=${batchId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching papers:", error);
+        throw error;
+    }
+};
+
+const createPaper = async (data: Record<string, any>): Promise<any> => {
+    try {
+        const response = await api.post("/marks/paper", data);
+        return response.data;
+    } catch (error) {
+        console.error("Error creating paper:", error);
+        throw error;
+    }
+};
+
+const createMark = async (data: Record<string, any>): Promise<any> => {
+    try {
+        const response = await api.post("/marks/mark", data);
+        return response.data;
+    } catch (error) {
+        console.error("Error creating mark:", error);
+        throw error;
+    }
+};
+
+const updateMarkApi = async (data: Record<string, any>): Promise<any> => {
+    try {
+        const response = await api.put("/marks/mark", data);
+        return response.data;
+    } catch (error) {
+        console.error("Error updating mark:", error);
+        throw error;
+    }
+};
+
+const getMarksByPaper = async (paperId: string): Promise<any> => {
+    try {
+        const response = await api.get(`/marks/mark/${paperId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching marks:", error);
+        throw error;
+    }
+};
+
+const togglePublishMark = async (paperId: string): Promise<any> => {
+    try {
+        const response = await api.put(`/marks/paper/${paperId}/publish`);
+        return response.data;
+    } catch (error) {
+        console.error("Error toggling publish:", error);
+        throw error;
+    }
+};
+
+export { getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark };

@@ -1,16 +1,112 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Video, Upload, Pen, Trash2, BookMarked, Search, X, Play, Eye, BookOpen, User } from "lucide-react";
+import { FileText, Video, Upload, Pen, Trash2, BookMarked, Search, X, Play, Eye, BookOpen, User, CheckCircle, AlertCircle, Calendar, ShieldOff, ShieldCheck, Clock } from "lucide-react";
 import { Badge, Btn, Input, Sel, Modal, Card } from "../ui";
 import { EmptyState } from "../ui";
 import { FLabel } from "../ui";
 import { fmtDate } from "../../lib/utils";
 import type { Material, Batch, Role } from "../../lib/types";
 import type { Lesson } from "./LessonsPage";
-import { getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getAllLessons, getAllBatches } from "../../api/apiCalls";
+import { getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getAllLessons, getAllBatches, getMaterialAccesses, grantBatchAccess, revokeBatchAccess } from "../../api/apiCalls";
 import Pagination from "../ui/Pagination";
 
 interface MaterialsPageProps {
   role: Role;
+}
+
+// ── Upload task tracked in background ──────────────────────────────────────
+interface UploadTask {
+  id: string;
+  fileName: string;
+  progress: number; // 0–100
+  status: "uploading" | "complete" | "error";
+  errorMsg?: string;
+}
+
+// ── Material access record from backend ─────────────────────────────────────
+interface MaterialAccessRecord {
+  id: string;          // access record id (for revoke)
+  batch_id: string;
+  batchName: string;   // from batch.name
+  material_id: string;
+  expiry_date: string | null;
+}
+
+// ── Default expiry: now + 7 days (YYYY-MM-DD) ──────────────────────────────
+const defaultExpiryDate = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d.toISOString().split("T")[0];
+};
+
+// ── Circular progress ring (bottom-right floating widget) ──────────────────
+function CircularProgress({ task, onDismiss }: { task: UploadTask; onDismiss: () => void }) {
+  const r = 28;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference - (task.progress / 100) * circumference;
+  const isDone = task.status === "complete";
+  const isError = task.status === "error";
+
+  return (
+    <div className="fixed bottom-6 right-6 z-[60] animate-in slide-in-from-right-4 duration-300">
+      <div className="bg-card border border-border rounded-2xl shadow-xl p-4 flex items-center gap-3 min-w-[240px]">
+        {/* Ring */}
+        <div className="relative w-[64px] h-[64px] shrink-0">
+          <svg className="w-full h-full -rotate-90" viewBox="0 0 64 64">
+            {/* Background track */}
+            <circle
+              cx="32" cy="32" r={r}
+              fill="none"
+              strokeWidth="5"
+              className="stroke-muted"
+            />
+            {/* Progress fill */}
+            <circle
+              cx="32" cy="32" r={r}
+              fill="none"
+              strokeWidth="5"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={offset}
+              className={`transition-[stroke-dashoffset] duration-300 ease-out ${
+                isError ? "stroke-destructive" : "stroke-primary"
+              }`}
+            />
+          </svg>
+          {/* Center icon or percentage */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            {isDone ? (
+              <CheckCircle className="w-6 h-6 text-emerald-500" />
+            ) : isError ? (
+              <AlertCircle className="w-6 h-6 text-destructive" />
+            ) : (
+              <span className="text-xs font-bold text-foreground">{Math.round(task.progress)}%</span>
+            )}
+          </div>
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate" title={task.fileName}>
+            {task.fileName}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {isDone ? "Upload complete" : isError ? "Upload failed" : "Uploading…"}
+          </p>
+        </div>
+
+        {/* Dismiss (only when done / error) */}
+        {(isDone || isError) && (
+          <button
+            onClick={onDismiss}
+            className="p-1 hover:bg-muted rounded-lg transition-colors shrink-0"
+            aria-label="Dismiss"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function MaterialsPage({ role }: MaterialsPageProps) {
@@ -29,7 +125,14 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
   const [form, setForm] = useState<Partial<Material>>({ type: "DOCUMENT", batchIds: [], batchNames: [], accessCount: 0 });
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
+  const [completeNotify, setCompleteNotify] = useState<UploadTask | null>(null);
+  const [materialAccesses, setMaterialAccesses] = useState<MaterialAccessRecord[]>([]);
+  const [expiryDates, setExpiryDates] = useState<Record<string, string>>({});
+  const [accessLoading, setAccessLoading] = useState<Record<string, boolean>>({});
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const dropRef = useRef<HTMLDivElement>(null);
 
   const contentTypes = [
     { value: "DOCUMENT", label: "Document", icon: FileText },
@@ -37,6 +140,19 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
   ];
 
   const isAdmin = role === "admin";
+
+  // ── Prevent tab close while any upload is in progress ─────────────────────
+  const hasUploading = uploadTasks.some((t) => t.status === "uploading");
+
+  useEffect(() => {
+    if (!hasUploading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ""; // Chrome requires this
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasUploading]);
 
   // ── Fetch batches & lessons for dropdowns ──────────────────────────────────
   useEffect(() => {
@@ -161,44 +277,153 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
   const openAdd = () => {
     setForm({ type: "DOCUMENT", batchIds: [], batchNames: [], accessCount: 0 });
     setFile(null);
+    setDragOver(false);
     setModal("add");
   };
 
-  const openEdit = (mat: Material) => {
+  const openEdit = async (mat: Material) => {
     setSelected(mat);
     setForm({ ...mat });
     setFile(null);
+    setMaterialAccesses([]);
+    setExpiryDates({});
     setModal("edit");
+
+    // Fetch existing access records for this material
+    try {
+      const res = await getMaterialAccesses(mat.id);
+      const accesses = res?.data ?? [];
+      const mapped: MaterialAccessRecord[] = accesses.map((a: any) => ({
+        id: a.id,
+        batch_id: a.batch_id,
+        batchName: a.batch?.name ?? "Unknown",
+        material_id: a.material_id,
+        expiry_date: a.expiry_date ?? null,
+      }));
+      setMaterialAccesses(mapped);
+
+      // Pre-fill expiry date pickers for batches without access
+      const dates: Record<string, string> = {};
+      batches.forEach((b) => {
+        if (!mapped.some((a) => a.batch_id === b.id)) {
+          dates[b.id] = defaultExpiryDate();
+        }
+      });
+      setExpiryDates(dates);
+    } catch (err) {
+      console.error("Failed to fetch material accesses:", err);
+    }
   };
 
-  // ── Save: Add ──────────────────────────────────────────────────────────────
-  const saveAdd = async () => {
+  // ── Drag-and-drop handlers ─────────────────────────────────────────────────
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set false if we're leaving the drop zone (not entering a child)
+    if (dropRef.current && !dropRef.current.contains(e.relatedTarget as Node)) {
+      setDragOver(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile) setFile(droppedFile);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (selected) setFile(selected);
+  };
+
+  const removeFile = () => setFile(null);
+
+  // ── Background upload ──────────────────────────────────────────────────────
+  const startUpload = async () => {
     if (!form.title?.trim()) {
       alert("Title is required.");
       return;
     }
-    setSaving(true);
+    if (!file && !form.url) {
+      alert("Please select a file to upload.");
+      return;
+    }
+
+    const taskId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const uploadFileName = file?.name ?? form.url ?? "Unknown file";
+
+    // Create the task in "uploading" state
+    const newTask: UploadTask = { id: taskId, fileName: uploadFileName, progress: 0, status: "uploading" };
+    setUploadTasks((prev) => [...prev, newTask]);
+
+    // Close the add modal immediately
+    setModal(null);
+
+    const fd = new FormData();
+    fd.append("title", form.title || "");
+    fd.append("description", form.description || "");
+    fd.append("type", form.type || "DOCUMENT");
+    fd.append("lesson", form.lessonId || "");
+    if (file) {
+      fd.append("file", file);
+    } else if (form.url) {
+      fd.append("url", form.url);
+    }
+
     try {
-      const fd = new FormData();
-      fd.append("title", form.title || "");
-      fd.append("description", form.description || "");
-      fd.append("type", form.type || "DOCUMENT");
-      fd.append("lesson", form.lessonId || "");
-      if (file) {
-        fd.append("file", file);
-      } else if (form.url) {
-        fd.append("url", form.url);
-      }
-      await addMaterial(fd);
-      setModal(null);
+      await addMaterial(fd, (progressEvent) => {
+        if (progressEvent.total) {
+          const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadTasks((prev) =>
+            prev.map((t) => (t.id === taskId ? { ...t, progress: pct } : t))
+          );
+        }
+      });
+
+      // Mark complete
+      setUploadTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, progress: 100, status: "complete" } : t))
+      );
+
+      // Show completion notification
+      setCompleteNotify({ id: taskId, fileName: uploadFileName, progress: 100, status: "complete" });
+
+      // Refresh the materials list
       fetchMaterials();
     } catch (error: any) {
       console.error("Failed to add material:", error);
       const msg = error?.response?.data?.msg ?? error?.message ?? "An error occurred";
-      alert("Failed to upload material: " + msg);
-    } finally {
-      setSaving(false);
+
+      setUploadTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status: "error", errorMsg: msg } : t))
+      );
+
+      // Show error notification
+      setCompleteNotify({ id: taskId, fileName: uploadFileName, progress: 0, status: "error", errorMsg: msg });
     }
+  };
+
+  // ── Dismiss a floating progress widget ─────────────────────────────────────
+  const dismissTask = (taskId: string) => {
+    setUploadTasks((prev) => prev.filter((t) => t.id !== taskId));
+  };
+
+  // ── Save: Add (modal inline — only used for validation; real upload via startUpload) ──
+  const saveAdd = () => {
+    startUpload();
   };
 
   // ── Save: Update ───────────────────────────────────────────────────────────
@@ -244,6 +469,55 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
     }
   };
 
+  // ── Grant / Revoke access handlers ────────────────────────────────────────
+  const handleGrantAccess = async (batchId: string) => {
+    if (!selected) return;
+    const key = batchId;
+    setAccessLoading((prev) => ({ ...prev, [key]: true }));
+    try {
+      const expiry = expiryDates[batchId] ?? defaultExpiryDate();
+      await grantBatchAccess(selected.id, batchId, expiry);
+      // Refresh accesses
+      const res = await getMaterialAccesses(selected.id);
+      const accesses = res?.data ?? [];
+      setMaterialAccesses(accesses.map((a: any) => ({
+        id: a.id,
+        batch_id: a.batch_id,
+        batchName: a.batch?.name ?? "Unknown",
+        material_id: a.material_id,
+        expiry_date: a.expiry_date ?? null,
+      })));
+      // Clear the date picker for this batch
+      setExpiryDates((prev) => { const next = { ...prev }; delete next[batchId]; return next; });
+      // Refresh material list to update card badges
+      fetchMaterials();
+    } catch (error: any) {
+      console.error("Failed to grant access:", error);
+      const msg = error?.response?.data?.msg ?? error?.message ?? "An error occurred";
+      alert("Failed to grant access: " + msg);
+    } finally {
+      setAccessLoading((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const handleRevokeAccess = async (accessId: string) => {
+    const key = accessId;
+    setAccessLoading((prev) => ({ ...prev, [key]: true }));
+    try {
+      await revokeBatchAccess(accessId);
+      // Remove from local state
+      setMaterialAccesses((prev) => prev.filter((a) => a.id !== accessId));
+      // Refresh material list
+      fetchMaterials();
+    } catch (error: any) {
+      console.error("Failed to revoke access:", error);
+      const msg = error?.response?.data?.msg ?? error?.message ?? "An error occurred";
+      alert("Failed to revoke access: " + msg);
+    } finally {
+      setAccessLoading((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
   // ── Batch checkbox toggle ──────────────────────────────────────────────────
   const toggleBatch = (batchId: string) => {
     setForm((f) => {
@@ -256,6 +530,11 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
       };
     });
   };
+
+  // ── File icon helper for drop zone ─────────────────────────────────────────
+  const FileIcon = file
+    ? (form.type === "VIDEO" ? Video : FileText)
+    : Upload;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -495,17 +774,75 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
               {lessons.map((l) => <option key={l.id} value={l.id}>{l.title}</option>)}
             </Sel>
           </div>
+
+          {/* ── Drag-and-drop file upload zone ──────────────────────────────── */}
           <div>
             <FLabel>File Upload</FLabel>
-            <Input
-              type="file"
-              onChange={(e) => {
-                const f = (e.target as HTMLInputElement).files?.[0];
-                if (f) setFile(f);
-              }}
-            />
+            <div
+              ref={dropRef}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              className={`relative mt-1.5 rounded-2xl border-2 border-dashed transition-all duration-200 cursor-pointer
+                ${dragOver
+                  ? "border-primary bg-primary/5 scale-[1.01]"
+                  : file
+                    ? "border-emerald-400/60 bg-emerald-50/40 dark:bg-emerald-950/20"
+                    : "border-border hover:border-muted-foreground/40 hover:bg-muted/20"
+                }
+              `}
+            >
+              <input
+                type="file"
+                onChange={handleFileSelect}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                aria-label="Choose file to upload"
+              />
+
+              {file ? (
+                /* File selected state */
+                <div className="flex items-center gap-3 px-5 py-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    form.type === "VIDEO"
+                      ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                  }`}>
+                    <FileIcon className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(file.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeFile(); }}
+                    className="p-1.5 hover:bg-muted rounded-lg transition-colors shrink-0 z-20"
+                    aria-label="Remove file"
+                  >
+                    <X className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </div>
+              ) : (
+                /* Empty drop zone */
+                <div className="flex flex-col items-center justify-center gap-2 px-5 py-8 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center">
+                    <Upload className="w-6 h-6 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      Drag & drop your file here
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      or <span className="text-primary font-medium">browse</span> to choose a file
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          {/* <div><FLabel>URL (optional)</FLabel><Input value={form.url || ""} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://…" /></div> */}
 
           <div className="flex justify-end gap-2 pt-2">
             <Btn v="outline" onClick={() => setModal(null)} disabled={saving}>Cancel</Btn>
@@ -516,72 +853,232 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
         </div>
       </Modal>
 
-      {/* ── Update Modal ─────────────────────────────────────────────────────── */}
-      <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Update Material">
-        <div className="space-y-4">
-          {/* Content type selector */}
-          <div className="mt-2 flex overflow-hidden rounded-2xl gap-3 border border-outline/20 bg-surface-container p-1">
-            {contentTypes.map(({ value, label, icon: Icon }) => (
-              <button
-                key={value}
-                type="button"
-                // onClick={() => setForm((f) => ({ ...f, type: value as Material["type"] }))}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium transition-colors
-                  ${form.type === value
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-background"
-                  }`}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-          <div><FLabel>Title</FLabel><Input value={form.title || ""} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Material title" /></div>
-          <div><FLabel>Description</FLabel><Input value={form.description || ""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Brief description" /></div>
-          <div>
-            <FLabel>Lesson</FLabel>
-            <Sel value={form.lessonId || ""} onChange={(e) => setForm((f) => ({ ...f, lessonId: e.target.value }))}>
-              <option value="">Select lesson</option>
-              {lessons.map((l) => <option key={l.id} value={l.id}>{l.title}</option>)}
-            </Sel>
-          </div>
-          {/* <div>
-            <FLabel>URL / File Path</FLabel>
-            <Input value={form.url || ""} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} placeholder="https://… or file path" />
-          </div> */}
-
-          {/* Batch access */}
-          <div>
-            <FLabel>Grant Access</FLabel>
-            <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {batches.map((b) => (
-                <label key={b.id} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-                    checked={(form.batchIds ?? []).includes(b.id)}
-                    onChange={() => toggleBatch(b.id)}
-                  />
-                  <span className="text-sm text-foreground">{b.name}</span>
-                </label>
+      {/* ── Update Modal (wide, two-column) ────────────────────────────────── */}
+      <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Update Material" wide>
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* ── Left column: Form + Access ────────────────────────────────── */}
+          <div className="flex-1 min-w-0 space-y-4">
+            {/* Content type selector */}
+            <div className="flex overflow-hidden rounded-2xl gap-3 border border-outline/20 bg-surface-container p-1">
+              {contentTypes.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium transition-colors
+                    ${form.type === value
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-background"
+                    }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{label}</span>
+                </button>
               ))}
-              {batches.length === 0 && (
-                <p className="text-xs text-muted-foreground col-span-full">No batches available.</p>
+            </div>
+
+            <div><FLabel>Title</FLabel><Input value={form.title || ""} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Material title" /></div>
+            <div><FLabel>Description</FLabel><Input value={form.description || ""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Brief description" /></div>
+            <div>
+              <FLabel>Lesson</FLabel>
+              <Sel value={form.lessonId || ""} onChange={(e) => setForm((f) => ({ ...f, lessonId: e.target.value }))}>
+                <option value="">Select lesson</option>
+                {lessons.map((l) => <option key={l.id} value={l.id}>{l.title}</option>)}
+              </Sel>
+            </div>
+
+            {/* ── Batch Access Management ────────────────────────────────── */}
+            <div>
+              <FLabel>Batch Access</FLabel>
+              <p className="text-xs text-muted-foreground mt-1 mb-3">
+                Grant or revoke access to batches. Students in granted batches can view this material until the expiry date.
+              </p>
+
+              {batches.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic py-3">No batches available.</p>
+              ) : (
+                <div className="border border-border rounded-xl overflow-hidden divide-y divide-border">
+                  {batches.map((b) => {
+                    const existingAccess = materialAccesses.find((a) => a.batch_id === b.id);
+                    const isLoading = accessLoading[b.id] || accessLoading[existingAccess?.id ?? ""];
+                    const isGranted = !!existingAccess;
+
+                    return (
+                      <div
+                        key={b.id}
+                        className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                          isGranted ? "bg-emerald-50/40 dark:bg-emerald-950/20" : "bg-card"
+                        }`}
+                      >
+                        {/* Batch name + status */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-foreground truncate">{b.name}</span>
+                            {isGranted && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shrink-0">
+                                <ShieldCheck className="w-3 h-3" />
+                                Granted
+                              </span>
+                            )}
+                          </div>
+                          {isGranted && existingAccess.expiry_date && (
+                            <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Expires: {fmtDate(existingAccess.expiry_date) || existingAccess.expiry_date.split("T")[0]}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Action: date picker + grant OR revoke */}
+                        {isGranted ? (
+                          <Btn
+                            v="outline"
+                            sz="sm"
+                            onClick={() => handleRevokeAccess(existingAccess.id)}
+                            disabled={isLoading}
+                            className="text-destructive hover:bg-destructive/10 border-destructive/30 shrink-0"
+                          >
+                            <ShieldOff className="w-3.5 h-3.5" />
+                            {isLoading ? "…" : "Revoke"}
+                          </Btn>
+                        ) : (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <input
+                              type="date"
+                              value={expiryDates[b.id] ?? defaultExpiryDate()}
+                              onChange={(e) => setExpiryDates((prev) => ({ ...prev, [b.id]: e.target.value }))}
+                              className="h-9 rounded-lg border border-border bg-card px-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                            />
+                            <Btn
+                              sz="sm"
+                              onClick={() => handleGrantAccess(b.id)}
+                              disabled={isLoading}
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              {isLoading ? "…" : "Grant"}
+                            </Btn>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Btn v="outline" onClick={() => setModal(null)} disabled={saving}>Cancel</Btn>
+              <Btn v="danger" onClick={handleDelete} disabled={saving}>
+                <Trash2 className="w-4 h-4" />Delete
+              </Btn>
+              <Btn onClick={saveUpdate} disabled={saving}>
+                <Pen className="w-4 h-4" />{saving ? "Saving…" : "Update"}
+              </Btn>
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Btn v="outline" onClick={() => setModal(null)} disabled={saving}>Cancel</Btn>
-            <Btn v="danger" onClick={handleDelete} disabled={saving}>
-              <Trash2 className="w-4 h-4" />Delete
-            </Btn>
-            <Btn onClick={saveUpdate} disabled={saving}>
-              <Pen className="w-4 h-4" />{saving ? "Saving…" : "Update"}
-            </Btn>
+          {/* ── Right column: Material thumbnail preview ─────────────────── */}
+          <div className="lg:w-56 shrink-0">
+            <div className="sticky top-0 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Preview</p>
+              <div className={`relative w-full aspect-video rounded-xl overflow-hidden ${thumbnailPlaceholder(form.type || "DOCUMENT")}`}>
+                <Badge v={typeBadgeV(form.type || "DOCUMENT")} className="absolute top-3 left-3 z-10 shadow-sm text-[10px]">
+                  {typeLabel(form.type || "DOCUMENT")}
+                </Badge>
+                <div className="absolute inset-0 flex items-center justify-center opacity-25">
+                  {form.type === "VIDEO"
+                    ? <Play className="w-16 h-16 text-white" />
+                    : <FileText className="w-16 h-16 text-white" />
+                  }
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-muted/40 space-y-2">
+                <p className="text-sm font-semibold text-foreground truncate" title={form.title}>
+                  {form.title || "Untitled Material"}
+                </p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Calendar className="w-3 h-3" />
+                  <span>{selected?.uploadDate ? fmtDate(selected.uploadDate) : "—"}</span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Eye className="w-3 h-3" />
+                  <span>{selected?.accessCount ?? 0} view{(selected?.accessCount ?? 0) !== 1 ? "s" : ""}</span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <BookOpen className="w-3 h-3" />
+                  <span>{selected?.lessonName || "No lesson"}</span>
+                </div>
+                {selected?.url && (
+                  <p className="text-[11px] text-muted-foreground/70 truncate" title={selected.url}>
+                    {selected.url}
+                  </p>
+                )}
+              </div>
+              {/* Granted batches summary */}
+              {materialAccesses.length > 0 && (
+                <div className="p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/15 space-y-1.5">
+                  <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
+                    Access Granted ({materialAccesses.length})
+                  </p>
+                  {materialAccesses.map((a) => (
+                    <div key={a.id} className="flex items-center justify-between text-xs">
+                      <span className="text-foreground truncate">{a.batchName}</span>
+                      <span className="text-muted-foreground shrink-0 ml-2">
+                        {a.expiry_date ? fmtDate(a.expiry_date) : "No expiry"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+      </Modal>
+
+      {/* ── Floating upload progress widgets (bottom-right) ─────────────────── */}
+      {uploadTasks.map((task) => (
+        <CircularProgress key={task.id} task={task} onDismiss={() => dismissTask(task.id)} />
+      ))}
+
+      {/* ── Upload complete / error notification modal ──────────────────────── */}
+      <Modal
+        open={completeNotify !== null}
+        onClose={() => setCompleteNotify(null)}
+        title={completeNotify?.status === "complete" ? "Upload Complete" : "Upload Failed"}
+      >
+        {completeNotify && (
+          <div className="space-y-4 text-center">
+            <div className="flex justify-center">
+              {completeNotify.status === "complete" ? (
+                <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                  <CheckCircle className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
+                </div>
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                {completeNotify.status === "complete" ? "Successfully uploaded!" : "Something went wrong"}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1 break-all">
+                {completeNotify.fileName}
+              </p>
+              {completeNotify.errorMsg && (
+                <p className="text-xs text-destructive mt-2 bg-destructive/10 rounded-lg px-3 py-2">
+                  {completeNotify.errorMsg}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-center pt-1">
+              <Btn onClick={() => { setCompleteNotify(null); dismissTask(completeNotify.id); }}>
+                {completeNotify.status === "complete" ? "Done" : "Dismiss"}
+              </Btn>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

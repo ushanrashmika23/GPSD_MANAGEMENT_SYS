@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, Plus, Edit2, Eye, Trash2 } from "lucide-react";
-import { Badge, Btn, Input, Sel, Modal, Card, Avatar } from "../ui";
-import { FLabel } from "../ui";
+import { Search, Plus, Edit2, Eye, Trash2, KeyRound, CalendarCheck, Wallet, FileText, Info } from "lucide-react";
+import { Badge, Btn, Input, Modal, Card, Avatar, FLabel, BatchDropdown, ConfirmDialog, StatCard } from "../ui";
 import { fmtDate } from "../../lib/utils";
 import type { Student, Batch, AttendanceRecord, Payment, Mark, Role } from "../../lib/types";
-import { getAllStudents, getStudentById, addStudent, updateStudent, deleteStudent, getAllBatches } from "../../api/apiCalls";
+import { getAllStudents, getStudentById, addStudent, updateStudent, deleteStudent, resetStudentPassword, getAllBatches } from "../../api/apiCalls";
 import Pagination from "../ui/Pagination";
 
-// ── HighlightText ────────────────────────────────────────────────────────────
+// ── HighlightText ──────────────────────────────────────────────────────────────
 function HighlightText({ text, term }: { text: string; term: string }) {
   if (!term.trim()) return <>{text}</>;
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -25,185 +24,143 @@ function HighlightText({ text, term }: { text: string; term: string }) {
   );
 }
 
-// ── StudentForm ──────────────────────────────────────────────────────────────
-function StudentForm({
-  form, setForm, batches, modal, onSave, onCancel, saving,
+// ── AddStudentForm ─────────────────────────────────────────────────────────────
+function AddStudentForm({
+  form, setForm, batches, onSave, onCancel, saving,
 }: {
-  form: Partial<Student & { firstName?: string; lastName?: string; email?: string; password?: string }>;
-  setForm: React.Dispatch<React.SetStateAction<Partial<any>>>;
+  form: Record<string, any>;
+  setForm: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   batches: Batch[];
-  modal: "add" | "edit" | "view" | null;
   onSave: () => void;
   onCancel: () => void;
   saving: boolean;
 }) {
-  const isAdd = modal === "add";
-  const isEdit = modal === "edit";
-
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        {/* ── Add-only fields ── */}
-        {isAdd && (
-          <>
-            <div>
-              <FLabel>First Name</FLabel>
-              <Input
-                value={(form as any).firstName || ""}
-                onChange={(e) => setForm((f: any) => ({ ...f, firstName: e.target.value }))}
-                placeholder="First name"
-                required
-              />
-            </div>
-            <div>
-              <FLabel>Last Name</FLabel>
-              <Input
-                value={(form as any).lastName || ""}
-                onChange={(e) => setForm((f: any) => ({ ...f, lastName: e.target.value }))}
-                placeholder="Last name"
-                required
-              />
-            </div>
-            <div>
-              <FLabel>Email</FLabel>
-              <Input
-                type="email"
-                value={(form as any).email || ""}
-                onChange={(e) => setForm((f: any) => ({ ...f, email: e.target.value }))}
-                placeholder="student@email.com"
-                required
-              />
-            </div>
-            <div>
-              <FLabel>Password</FLabel>
-              <Input
-                type="password"
-                value={(form as any).password || ""}
-                onChange={(e) => setForm((f: any) => ({ ...f, password: e.target.value }))}
-                placeholder="Min. 6 characters"
-                required
-              />
-            </div>
-          </>
-        )}
-
-        {/* ── Edit: show read-only name ── */}
-        {isEdit && (
-          <>
-            <div className="col-span-2">
-              <FLabel>Full Name</FLabel>
-              <Input
-                value={form.fullName || ""}
-                onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))}
-                placeholder="Student's full name"
-              />
-            </div>
-            <div className="col-span-2 flex items-center gap-3 pt-2">
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="sr-only peer"
-                  checked={form.active ?? true}
-                  onChange={(e) => setForm((f: any) => ({ ...f, active: e.target.checked }))}
-                />
-                <div className="w-9 h-5 bg-muted-foreground/30 peer-checked:bg-emerald-500 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
-              </label>
-              <span className="text-sm font-medium text-foreground">
-                {form.active ? "Active" : "Inactive"}
-              </span>
-            </div>
-          </>
-        )}
-
+        <div>
+          <FLabel>First Name</FLabel>
+          <Input value={form.firstName || ""} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} placeholder="First name" required />
+        </div>
+        <div>
+          <FLabel>Last Name</FLabel>
+          <Input value={form.lastName || ""} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} placeholder="Last name" required />
+        </div>
+        <div>
+          <FLabel>Email</FLabel>
+          <Input type="email" value={form.email || ""} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="student@email.com" required />
+        </div>
+        <div>
+          <FLabel>Password</FLabel>
+          <Input type="password" value={form.password || ""} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Min. 6 characters" required />
+        </div>
         <div>
           <FLabel>Call-up No.</FLabel>
-          <Input
-            value={form.callupNo || ""}
-            onChange={(e) => setForm((f) => ({ ...f, callupNo: e.target.value }))}
-            placeholder="MA001"
-            required
-          />
+          <Input value={form.callupNo || ""} onChange={(e) => setForm((f) => ({ ...f, callupNo: e.target.value }))} placeholder="MA001" required />
         </div>
         <div>
           <FLabel>Mobile</FLabel>
-          <Input
-            value={form.mobile || ""}
-            onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
-            placeholder="07X XXXXXXX"
-            required
-          />
+          <Input value={form.mobile || ""} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} placeholder="07X XXXXXXX" required />
         </div>
         <div className="col-span-2">
           <FLabel>School</FLabel>
-          <Input
-            value={form.school || ""}
-            onChange={(e) => setForm((f) => ({ ...f, school: e.target.value }))}
-            placeholder="School name"
-          />
+          <Input value={form.school || ""} onChange={(e) => setForm((f) => ({ ...f, school: e.target.value }))} placeholder="School name" />
         </div>
         <div className="col-span-2">
           <FLabel>Address</FLabel>
-          <Input
-            value={form.address || ""}
-            onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-            placeholder="Full address"
-          />
+          <Input value={form.address || ""} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="Full address" />
         </div>
         <div>
           <FLabel>Parent Name</FLabel>
-          <Input
-            value={form.parentName || ""}
-            onChange={(e) => setForm((f) => ({ ...f, parentName: e.target.value }))}
-            placeholder="Parent/guardian name"
-          />
+          <Input value={form.parentName || ""} onChange={(e) => setForm((f) => ({ ...f, parentName: e.target.value }))} placeholder="Parent/guardian name" />
         </div>
         <div>
           <FLabel>Parent Mobile</FLabel>
-          <Input
-            value={form.parentMobile || ""}
-            onChange={(e) => setForm((f) => ({ ...f, parentMobile: e.target.value }))}
-            placeholder="07X XXXXXXX"
-          />
+          <Input value={form.parentMobile || ""} onChange={(e) => setForm((f) => ({ ...f, parentMobile: e.target.value }))} placeholder="07X XXXXXXX" />
         </div>
         <div className="col-span-2">
           <FLabel>Batch</FLabel>
-          <Sel
-            value={(form as any).batchId || form.batchIds?.[0] || ""}
-            onChange={(e) =>
-              setForm((f: any) => ({ ...f, batchId: e.target.value, batchIds: [e.target.value] }))
-            }
-          >
-            <option value="">Select batch</option>
-            {batches.filter((b) => b.active).map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </Sel>
+          <BatchDropdown
+            batches={batches}
+            value={form.batchId ?? form.batchIds?.[0] ?? ""}
+            onChange={(id) => setForm((f) => ({ ...f, batchId: id, batchIds: [id] }))}
+            placeholder="Select batch"
+          />
         </div>
       </div>
 
       <div className="flex justify-end gap-2 pt-2">
         <Btn v="outline" onClick={onCancel} disabled={saving}>Cancel</Btn>
         <Btn onClick={onSave} disabled={saving}>
-          {saving ? "Saving…" : isAdd ? "Add Student" : "Save Changes"}
+          {saving ? "Saving…" : "Add Student"}
         </Btn>
       </div>
     </div>
   );
 }
 
-// ── ViewProfile ──────────────────────────────────────────────────────────────
-function ViewProfile({ student, onClose }: { student: Student; onClose: () => void }) {
+// ── ProfileModal ───────────────────────────────────────────────────────────────
+function ProfileModal({
+  open, student, batches, role, editing, setEditing,
+  onClose, onSaved, onDeleted,
+}: {
+  open: boolean;
+  student: Student | null;
+  batches: Batch[];
+  role: Role;
+  editing: boolean;
+  setEditing: React.Dispatch<React.SetStateAction<boolean>>;
+  onClose: () => void;
+  onSaved: () => void;
+  onDeleted: () => void;
+}) {
+  // ── Profile fetch ──────────────────────────────────────────────────────────
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState<Record<string, any>>({});
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Confirmations
+  const [saveConfirm, setSaveConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Reset password
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetForm, setResetForm] = useState({ password: "", confirm: "" });
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Fetch profile whenever student or open changes
   useEffect(() => {
+    if (!open || !student) return;
     let cancelled = false;
+    setLoading(true);
+    setEditing(false);
+    setMsg(null);
+    setResetOpen(false);
+    setResetMsg(null);
+    setResetForm({ password: "", confirm: "" });
     (async () => {
       try {
         const res = await getStudentById(student.callupNo);
         const data = res?.data?.data ?? res?.data ?? null;
-        if (!cancelled) {
+        if (!cancelled && data) {
           setProfile(data);
+          setForm({
+            firstName: data.user?.first_name ?? "",
+            lastName: data.user?.last_name ?? "",
+            callupNo: data.call_up_no ?? "",
+            email: data.user?.email ?? "",
+            mobile: data.user?.mobile ?? "",
+            school: data.school ?? "",
+            address: data.user?.address ?? "",
+            parentName: data.parent_name ?? "",
+            parentMobile: data.parent_mobile ?? "",
+            batchId: data.batch_id ?? "",
+            active: data.user?.is_active ?? true,
+          });
         }
       } catch (err) {
         console.error("Failed to load student profile:", err);
@@ -212,84 +169,329 @@ function ViewProfile({ student, onClose }: { student: Student; onClose: () => vo
       }
     })();
     return () => { cancelled = true; };
-  }, [student.callupNo]);
+  }, [open, student?.callupNo]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Save ───────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!student || !profile) return;
+    setSaving(true);
+    setMsg(null);
+    try {
+      const payload: Record<string, any> = {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        mobile: form.mobile,
+        address: form.address,
+        callupNo: form.callupNo,
+        school: form.school,
+        parentName: form.parentName,
+        parentMobile: form.parentMobile,
+        batchId: form.batchId,
+        batchIds: [form.batchId],
+      };
+      // Only send isActive if explicitly boolean
+      if (typeof form.active === "boolean") {
+        payload.isActive = form.active;
+      }
+      const result = await updateStudent(student.callupNo, payload);
+      if (result?.success) {
+        setMsg({ ok: true, text: "Profile updated successfully." });
+        setEditing(false);
+        // Re-fetch profile to refresh stats / batch name
+        const res = await getStudentById(student.callupNo);
+        const fresh = res?.data?.data ?? res?.data ?? null;
+        if (fresh) setProfile(fresh);
+        onSaved();
+      } else {
+        setMsg({ ok: false, text: result?.msg || "Failed to update profile." });
+      }
+    } catch (err: any) {
+      const text = err?.response?.data?.msg ?? err?.message ?? "Failed to update profile.";
+      setMsg({ ok: false, text });
+    } finally {
+      setSaving(false);
+      setSaveConfirm(false);
+    }
+  };
+
+  // ── Delete ─────────────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!student) return;
+    setDeleting(true);
+    try {
+      await deleteStudent(student.callupNo);
+      onDeleted();
+      onClose();
+    } catch (err: any) {
+      const text = err?.response?.data?.msg ?? err?.message ?? "Failed to delete student.";
+      setMsg({ ok: false, text });
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(false);
+    }
+  };
+
+  // ── Reset password ─────────────────────────────────────────────────────────
+  const handleResetPassword = async () => {
+    if (!student) return;
+    if (resetForm.password.length < 6) {
+      setResetMsg({ ok: false, text: "Password must be at least 6 characters." });
+      return;
+    }
+    if (resetForm.password !== resetForm.confirm) {
+      setResetMsg({ ok: false, text: "Passwords do not match." });
+      return;
+    }
+    setResetting(true);
+    setResetMsg(null);
+    try {
+      const result = await resetStudentPassword(student.callupNo, resetForm.password);
+      if (result?.success) {
+        setResetMsg({ ok: true, text: "Password reset successfully." });
+        setResetForm({ password: "", confirm: "" });
+      } else {
+        setResetMsg({ ok: false, text: result?.msg || "Failed to reset password." });
+      }
+    } catch (err: any) {
+      const text = err?.response?.data?.msg ?? err?.message ?? "Failed to reset password.";
+      setResetMsg({ ok: false, text });
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // ── Derived counts ─────────────────────────────────────────────────────────
   const attendCount = profile?.attendance?.length ?? 0;
   const paymentCount = profile?.payment?.length ?? 0;
   const marksCount = profile?.student_marks?.length ?? 0;
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-start gap-5">
-        <Avatar name={student.fullName} size="lg" />
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-foreground">{student.fullName}</h3>
-            <Badge v={student.active ? "success" : "danger"}>{student.active ? "Active" : "Inactive"}</Badge>
-          </div>
-          <p className="text-sm text-muted-foreground mt-0.5">{student.school}</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Registered {fmtDate(student.registrationDate)} · {student.callupNo}
-          </p>
-        </div>
-      </div>
+  // ── Helper: read-only field with double-click ──────────────────────────────
+  const Field = ({ label, keyName, placeholder = "", readOnlyAlways = false }: {
+    label: string; keyName: string; placeholder?: string; readOnlyAlways?: boolean;
+  }) => (
+    <div onDoubleClick={() => { if (!readOnlyAlways) setEditing(true); }}>
+      <FLabel>{label}</FLabel>
+      <Input
+        value={(form as any)[keyName] ?? ""}
+        readOnly={!editing || readOnlyAlways}
+        onChange={(e) => setForm((f) => ({ ...f, [keyName]: e.target.value }))}
+        placeholder={placeholder}
+        className={(!editing || readOnlyAlways) ? "opacity-70 cursor-default" : ""}
+      />
+    </div>
+  );
 
-      {loading ? (
-        <p className="text-sm text-muted-foreground text-center py-4">Loading profile…</p>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Mobile</p>
-                <p className="font-mono">{student.mobile || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">NIC</p>
-                <p className="font-mono">{student.nic || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Address</p>
-                <p>{student.address || "—"}</p>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Parent</p>
-                <p>{student.parentName || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Parent Mobile</p>
-                <p className="font-mono">{student.parentMobile || "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Batch</p>
-                <p className="font-mono">
-                  {profile?.batch?.name ?? "—"}
+  if (!student) return null;
+
+  return (
+    <>
+      <div className="space-y-6">
+        {loading ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Loading profile…</p>
+        ) : (
+          <>
+            {/* ── Header ── */}
+            <div className="flex items-start gap-5">
+              <Avatar name={student.fullName} size="xl" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-lg font-bold text-foreground">
+                    {profile?.user?.first_name} {profile?.user?.last_name}
+                  </h3>
+                  <Badge v={form.active ? "success" : "danger"}>
+                    {form.active ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {profile?.school ?? student.school}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {profile?.call_up_no ?? student.callupNo}
+                  {profile?.user?.email ? ` · ${profile.user.email}` : ""}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Registered {fmtDate(profile?.user?.createdAt ?? student.registrationDate)}
                 </p>
               </div>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Classes Attended", value: attendCount },
-              { label: "Payments Made", value: paymentCount },
-              { label: "Papers Taken", value: marksCount },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-muted/50 rounded-xl p-3 text-center">
-                <p className="text-xl font-bold font-mono text-foreground">{value}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+              {/* Action buttons (view mode) */}
+              {role === "admin" && !editing && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <Btn v="outline" sz="sm" onClick={() => setEditing(true)}>
+                    <Edit2 className="w-3.5 h-3.5" />Edit
+                  </Btn>
+                  <Btn v="ghost" sz="sm" onClick={() => { setResetOpen((p) => !p); setResetMsg(null); }} className="text-muted-foreground">
+                    <KeyRound className="w-3.5 h-3.5" />Reset Password
+                  </Btn>
+                  <Btn v="ghost" sz="sm" onClick={() => setDeleteConfirm(true)} className="text-red-500 hover:text-red-600">
+                    <Trash2 className="w-3.5 h-3.5" />Delete
+                  </Btn>
+                </div>
+              )}
+
+              {/* Cancel button (edit mode) */}
+              {editing && (
+                <Btn v="outline" sz="sm" onClick={() => setEditing(false)} className="shrink-0">
+                  Cancel
+                </Btn>
+              )}
+            </div>
+
+            {/* ── Stats ── */}
+            <div className="grid grid-cols-3 gap-3">
+              <StatCard label="Classes Attended" value={attendCount} icon={CalendarCheck} color="navy" />
+              <StatCard label="Payments Made" value={paymentCount} icon={Wallet} color="emerald" />
+              <StatCard label="Papers Taken" value={marksCount} icon={FileText} color="blue" />
+            </div>
+
+            {/* ── Status toggle (edit mode only) ── */}
+            {editing && (
+              <div className="flex items-center gap-3">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={form.active ?? true}
+                    onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
+                  />
+                  <div className="w-9 h-5 bg-muted-foreground/30 peer-checked:bg-emerald-500 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
+                </label>
+                <span className="text-sm font-medium">{form.active ? "Active" : "Inactive"}</span>
               </div>
-            ))}
+            )}
+
+            {/* ── Details grid ── */}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="First Name" keyName="firstName" />
+              <Field label="Last Name" keyName="lastName" />
+              <Field label="Call-up No." keyName="callupNo" />
+              <Field label="Mobile" keyName="mobile" />
+              <div>
+                <FLabel>Email</FLabel>
+                <Input value={form.email ?? ""} readOnly className="opacity-70 cursor-default" title="Email cannot be changed" />
+              </div>
+              <div>
+                <FLabel>Batch</FLabel>
+                {editing ? (
+                  <BatchDropdown
+                    batches={batches}
+                    value={form.batchId ?? ""}
+                    onChange={(id) => setForm((f) => ({ ...f, batchId: id }))}
+                    placeholder="Select batch"
+                  />
+                ) : (
+                  <div className="px-3 py-2 text-sm border border-border rounded-lg bg-muted/30 text-foreground">
+                    {profile?.batch?.name ?? "—"}
+                  </div>
+                )}
+              </div>
+              <div className="col-span-2">
+                <Field label="School" keyName="school" />
+              </div>
+              <div className="col-span-2">
+                <Field label="Address" keyName="address" />
+              </div>
+              <Field label="Parent Name" keyName="parentName" />
+              <Field label="Parent Mobile" keyName="parentMobile" />
+            </div>
+
+            {/* ── Hint ── */}
+            {!editing && role === "admin" && (
+              <p className="text-center text-xs text-muted-foreground">
+                Double-click any field or click <strong>Edit</strong> to start editing
+              </p>
+            )}
+
+            {/* ── Inline status message ── */}
+            {msg && (
+              <div className={`text-sm p-3 rounded-lg ${msg.ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+                {msg.text}
+              </div>
+            )}
+
+            {/* ── Reset password inline form ── */}
+            {resetOpen && (
+              <div className="border border-border rounded-xl p-4 space-y-3 bg-muted/20">
+                <h4 className="text-sm font-semibold text-foreground">Reset Password</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <FLabel>New Password</FLabel>
+                    <Input
+                      type="password"
+                      value={resetForm.password}
+                      onChange={(e) => setResetForm((f) => ({ ...f, password: e.target.value }))}
+                      placeholder="Min. 6 characters"
+                    />
+                  </div>
+                  <div>
+                    <FLabel>Confirm Password</FLabel>
+                    <Input
+                      type="password"
+                      value={resetForm.confirm}
+                      onChange={(e) => setResetForm((f) => ({ ...f, confirm: e.target.value }))}
+                      placeholder="Re-enter password"
+                    />
+                  </div>
+                </div>
+                {resetMsg && (
+                  <p className={`text-xs ${resetMsg.ok ? "text-emerald-600" : "text-red-600"}`}>
+                    {resetMsg.text}
+                  </p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Btn v="outline" sz="sm" onClick={() => { setResetOpen(false); setResetMsg(null); }}>Cancel</Btn>
+                  <Btn sz="sm" onClick={handleResetPassword} disabled={resetting}>
+                    {resetting ? "Resetting…" : "Reset Password"}
+                  </Btn>
+                </div>
+              </div>
+            )}
+
+            {/* ── Save button (edit mode) ── */}
+            {editing && (
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <Btn v="outline" onClick={() => setEditing(false)} disabled={saving}>Cancel</Btn>
+                <Btn onClick={() => setSaveConfirm(true)} disabled={saving}>
+                  {saving ? "Saving…" : "Save Changes"}
+                </Btn>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Save confirmation dialog ── */}
+      <ConfirmDialog
+        open={saveConfirm}
+        title="Confirm Changes"
+        message={`Save the updated details for ${student.fullName}?`}
+        confirmLabel="Yes, Save"
+        busy={saving}
+        onConfirm={handleSave}
+        onCancel={() => setSaveConfirm(false)}
+      />
+
+      {/* ── Delete confirmation dialog ── */}
+      <ConfirmDialog
+        open={deleteConfirm}
+        danger
+        title="Delete Student"
+        message={
+          <div className="space-y-1">
+            <p><strong>{student.fullName}</strong> ({student.callupNo})</p>
+            <p className="text-muted-foreground">All attendance, payment, and mark records will be permanently removed. This cannot be undone.</p>
           </div>
-        </>
-      )}
-    </div>
+        }
+        confirmLabel="Delete Student"
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteConfirm(false)}
+      />
+    </>
   );
 }
 
-// ── StudentsPage ─────────────────────────────────────────────────────────────
+// ── StudentsPage ───────────────────────────────────────────────────────────────
 interface StudentsPageProps {
   batches: Batch[];
   attendance: AttendanceRecord[];
@@ -298,21 +500,22 @@ interface StudentsPageProps {
   role: Role;
 }
 
-export function StudentsPage({ batches, attendance, payments, marks, role }: StudentsPageProps) {
+export function StudentsPage({ batches: _batches, attendance, payments, marks, role }: StudentsPageProps) {
   const [students, setStudents] = useState<Student[]>([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, pageSize: 12, totalRecords: 0 });
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [batchFilter, setBatchFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [modal, setModal] = useState<"add" | "edit" | "view" | null>(null);
+  const [modal, setModal] = useState<"add" | "profile" | null>(null);
   const [selected, setSelected] = useState<Student | null>(null);
-  const [form, setForm] = useState<Partial<any>>({});
+  const [profileEditing, setProfileEditing] = useState(false);
+  const [form, setForm] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const [activeBatches, setActiveBatches] = useState<Batch[]>(batches);
+  const [allBatches, setAllBatches] = useState<Batch[]>(_batches);
 
-  // ── Fetch active batches for form dropdown ──────────────────────────────
+  // ── Fetch all batches (active + inactive) for dropdowns ────────────────────
   useEffect(() => {
     (async () => {
       try {
@@ -324,18 +527,18 @@ export function StudentsPage({ batches, attendance, payments, marks, role }: Stu
           fee: b.class_fee ?? b.fee ?? 0,
           startTime: b.start_time ?? b.startTime ?? "",
           endTime: b.end_time ?? b.endTime ?? "",
-          endYear: b.exam_date ?? b.examDate ?? "",
+          examDate: b.exam_date ?? b.examDate ?? "",
           active: b.is_active ?? b.active ?? true,
           day: b.day ?? "",
         }));
-        setActiveBatches(mapped);
+        setAllBatches(mapped);
       } catch (err) {
-        console.error("Failed to fetch batches for form:", err);
+        console.error("Failed to fetch batches:", err);
       }
     })();
   }, []);
 
-  // ── Debounced search ────────────────────────────────────────────────────
+  // ── Debounced search ──────────────────────────────────────────────────────
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
     setSearchInput(v);
@@ -346,7 +549,7 @@ export function StudentsPage({ batches, attendance, payments, marks, role }: Stu
     }, 300);
   };
 
-  // ── Fetch students from API ─────────────────────────────────────────────
+  // ── Fetch students from API ───────────────────────────────────────────────
   const fetchStudents = useCallback(async () => {
     try {
       const result = await getAllStudents(pagination.page, pagination.pageSize, search);
@@ -379,89 +582,53 @@ export function StudentsPage({ batches, attendance, payments, marks, role }: Stu
     }
   }, [pagination.page, pagination.pageSize, search]);
 
-  useEffect(() => {
-    fetchStudents();
-  }, [fetchStudents]);
+  useEffect(() => { fetchStudents(); }, [fetchStudents]);
 
-  // ── Client-side batch + status filters (on current page) ────────────────
+  // ── Client-side batch + status filters ────────────────────────────────────
   const filtered = useMemo(() => students.filter((s) => {
     const matchBatch = batchFilter === "all" || s.batchIds.includes(batchFilter);
     const matchStatus = statusFilter === "all" || (statusFilter === "active" ? s.active : !s.active);
     return matchBatch && matchStatus;
   }), [students, batchFilter, statusFilter]);
 
-  // ── Modal helpers ───────────────────────────────────────────────────────
+  // ── Modal helpers ─────────────────────────────────────────────────────────
   const openAdd = () => {
     setForm({ active: true, registrationDate: new Date().toISOString().split("T")[0] });
     setModal("add");
   };
-  const openEdit = (s: Student) => {
+  const openProfile = (s: Student, startInEdit = false) => {
     setSelected(s);
-    setForm({
-      ...s,
-      batchId: s.batchIds?.[0] || "",
-      firstName: s.fullName?.split(" ")[0] || "",
-      lastName: s.fullName?.split(" ").slice(1).join(" ") || "",
-    });
-    setModal("edit");
-  };
-  const openView = (s: Student) => {
-    setSelected(s);
-    setModal("view");
+    setProfileEditing(startInEdit);
+    setModal("profile");
   };
 
-  // ── Save (API) ──────────────────────────────────────────────────────────
-  const save = async () => {
+  // ── Add Student save ──────────────────────────────────────────────────────
+  const saveAdd = async () => {
     setSaving(true);
     try {
-      if (modal === "add") {
-        // Validate required add fields
-        if (!(form as any).firstName?.trim() || !(form as any).lastName?.trim()) {
-          alert("First name and last name are required.");
-          setSaving(false);
-          return;
-        }
-        if (!(form as any).email?.trim()) {
-          alert("Email is required.");
-          setSaving(false);
-          return;
-        }
-        if (!(form as any).password || (form as any).password.length < 6) {
-          alert("Password must be at least 6 characters.");
-          setSaving(false);
-          return;
-        }
-        await addStudent(form);
-      } else if (modal === "edit" && selected) {
-        await updateStudent(selected.callupNo, form);
+      if (!(form as any).firstName?.trim() || !(form as any).lastName?.trim()) {
+        alert("First name and last name are required.");
+        setSaving(false);
+        return;
       }
+      if (!(form as any).email?.trim()) { alert("Email is required."); setSaving(false); return; }
+      if (!(form as any).password || (form as any).password.length < 6) {
+        alert("Password must be at least 6 characters.");
+        setSaving(false);
+        return;
+      }
+      await addStudent(form);
       setModal(null);
-      setSaving(false);
       fetchStudents();
     } catch (error: any) {
-      console.error("Failed to save student:", error);
       const msg = error?.response?.data?.msg ?? error?.message ?? "An error occurred";
       alert("Failed to save student: " + msg);
+    } finally {
       setSaving(false);
     }
   };
 
-  // ── Delete ──────────────────────────────────────────────────────────────
-  const handleDelete = async (s: Student) => {
-    if (!window.confirm(`Are you sure you want to delete ${s.fullName} (${s.callupNo})? This action cannot be undone.`)) {
-      return;
-    }
-    try {
-      await deleteStudent(s.callupNo);
-      fetchStudents();
-    } catch (error: any) {
-      console.error("Failed to delete student:", error);
-      const msg = error?.response?.data?.msg ?? error?.message ?? "An error occurred";
-      alert("Failed to delete student: " + msg);
-    }
-  };
-
-  // ── Render ──────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -489,15 +656,23 @@ export function StudentsPage({ batches, attendance, payments, marks, role }: Stu
               onChange={handleSearchChange}
             />
           </div>
-          <Sel className="sm:w-44" value={batchFilter} onChange={(e) => setBatchFilter(e.target.value)}>
-            <option value="all">All Batches</option>
-            {activeBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </Sel>
-          <Sel className="sm:w-36" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <BatchDropdown
+            className="sm:w-44"
+            batches={allBatches}
+            value={batchFilter}
+            onChange={setBatchFilter}
+            includeAll
+            placeholder="All Batches"
+          />
+          <select
+            className="sm:w-36 px-3 py-2 text-sm rounded-lg border border-border bg-card text-foreground"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
-          </Sel>
+          </select>
         </div>
       </Card>
 
@@ -533,7 +708,7 @@ export function StudentsPage({ batches, attendance, payments, marks, role }: Stu
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       {s.batchIds.map((bid) => {
-                        const b = activeBatches.find((x) => x.id === bid);
+                        const b = allBatches.find((x) => x.id === bid);
                         return b ? <Badge key={bid} v="default">{b.name}</Badge> : null;
                       })}
                     </div>
@@ -543,15 +718,23 @@ export function StudentsPage({ batches, attendance, payments, marks, role }: Stu
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => openView(s)} className="p-1.5 hover:bg-muted rounded-lg transition-colors" title="View Profile">
+                      {/* <button onClick={() => openProfile(s, false)} className="p-1.5 hover:bg-muted rounded-lg transition-colors" title="View Profile">
                         <Eye className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
+                      </button> */}
                       {role === "admin" && (
                         <>
-                          <button onClick={() => openEdit(s)} className="p-1.5 hover:bg-muted rounded-lg transition-colors" title="Edit">
-                            <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
+                          <button onClick={() => openProfile(s, true)} className="p-1.5 hover:bg-muted rounded-lg transition-colors" title="Edit">
+                            <Info className="w-3.5 h-3.5 text-muted-foreground" />
                           </button>
-                          <button onClick={() => handleDelete(s)} className="p-1.5 hover:bg-muted rounded-lg transition-colors" title="Delete">
+                          <button onClick={async () => {
+                            if (!window.confirm(`Delete ${s.fullName} (${s.callupNo})? This cannot be undone.`)) return;
+                            try {
+                              await deleteStudent(s.callupNo);
+                              fetchStudents();
+                            } catch (err: any) {
+                              alert("Failed to delete: " + (err?.response?.data?.msg ?? err?.message));
+                            }
+                          }} className="p-1.5 hover:bg-muted rounded-lg transition-colors" title="Delete">
                             <Trash2 className="w-3.5 h-3.5 text-red-500" />
                           </button>
                         </>
@@ -576,33 +759,31 @@ export function StudentsPage({ batches, attendance, payments, marks, role }: Stu
 
       {/* ── Add Modal ── */}
       <Modal open={modal === "add"} onClose={() => setModal(null)} title="Add New Student">
-        <StudentForm
+        <AddStudentForm
           form={form}
           setForm={setForm}
-          batches={activeBatches}
-          modal={modal}
-          onSave={save}
+          batches={allBatches}
+          onSave={saveAdd}
           onCancel={() => setModal(null)}
           saving={saving}
         />
       </Modal>
 
-      {/* ── Edit Modal ── */}
-      <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Edit Student">
-        <StudentForm
-          form={form}
-          setForm={setForm}
-          batches={activeBatches}
-          modal={modal}
-          onSave={save}
-          onCancel={() => setModal(null)}
-          saving={saving}
-        />
-      </Modal>
-
-      {/* ── View Modal ── */}
-      <Modal open={modal === "view" && !!selected} onClose={() => setModal(null)} title="Student Profile" wide>
-        {selected && <ViewProfile student={selected} onClose={() => setModal(null)} />}
+      {/* ── Unified Profile Modal ── */}
+      <Modal open={modal === "profile" && !!selected} onClose={() => setModal(null)} title="Student Profile" wide>
+        {selected && (
+          <ProfileModal
+            open={modal === "profile"}
+            student={selected}
+            batches={allBatches}
+            role={role}
+            editing={profileEditing}
+            setEditing={setProfileEditing}
+            onClose={() => setModal(null)}
+            onSaved={fetchStudents}
+            onDeleted={fetchStudents}
+          />
+        )}
       </Modal>
     </div>
   );

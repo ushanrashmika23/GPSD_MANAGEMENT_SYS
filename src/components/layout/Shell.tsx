@@ -79,16 +79,7 @@ export function Shell({ user, onLogout, state }: ShellProps) {
         );
       case "marks":
         return (
-          <MarksPage
-            papers={state.papers}
-            setPapers={state.setPapers}
-            marks={state.marks}
-            setMarks={state.setMarks}
-            students={state.students}
-            batches={state.batches}
-            role={role}
-            materials={state.materials}
-          />
+          <MarksPage role={role} />
         );
       case "fees":
         return (

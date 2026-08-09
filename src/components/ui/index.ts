@@ -6,3 +6,5 @@ export { Modal } from "./Modal";
 export { Card, StatCard } from "./Card";
 export { Avatar } from "./Avatar";
 export { EmptyState } from "./EmptyState";
+export { BatchDropdown } from "./BatchDropdown";
+export { ConfirmDialog } from "./ConfirmDialog";

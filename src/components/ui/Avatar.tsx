@@ -1,11 +1,12 @@
 import { cn, initials } from "../../lib/utils";
 
-type AvatarSize = "sm" | "md" | "lg";
+type AvatarSize = "sm" | "md" | "lg" | "xl";
 
 const sizeMap: Record<AvatarSize, string> = {
   sm: "w-7 h-7 text-xs",
   md: "w-9 h-9 text-sm",
   lg: "w-12 h-12 text-base",
+  xl: "w-16 h-16 text-lg",
 };
 
 const colors = [

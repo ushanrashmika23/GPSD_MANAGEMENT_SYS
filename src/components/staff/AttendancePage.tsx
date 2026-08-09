@@ -39,8 +39,9 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
     student: any | null;
     marking: boolean;
     marked: boolean;
+    alreadyMarked: boolean;
     error: string;
-  }>({ open: false, student: null, marking: false, marked: false, error: "" });
+  }>({ open: false, student: null, marking: false, marked: false, alreadyMarked: false, error: "" });
 
   // ── New day modal ────────────────────────────────────────────────────────
   const [paperModal, setPaperModal] = useState(false);
@@ -63,12 +64,8 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
         day: b.day ?? "",
       }));
       setActiveBatches(mapped);
-      // Set default batchId in form if not already set
-      setForm((prev) => {
-        if (prev.batchId) return prev;
-        const active = mapped.find((b) => b.active);
-        return { ...prev, batchId: active?.id ?? "" };
-      });
+      // Keep batchId empty — user must explicitly choose
+      // (no auto-selection)
     } catch (err) {
       console.error("Failed to fetch batches:", err);
     }
@@ -156,7 +153,9 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
     setSelectedClass(cls);
     setSearchInput("");
     setSearch("");
-    setMarkedStudents(new Set());
+    // Populate already-marked students from the API response so marks survive
+    // page changes / search / re-selecting the same class
+    setMarkedStudents(new Set(cls.markedCallUpNos ?? []));
     setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -182,19 +181,36 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
     const callUpNo = value.trim();
     if (!callUpNo) return;
 
-    setScanModal({ open: true, student: null, marking: false, marked: false, error: "" });
+    setScanModal({ open: true, student: null, marking: false, marked: false, alreadyMarked: false, error: "" });
 
     try {
       const result = await getStudentById(callUpNo);
       const studentData = result?.data ?? null;
       if (studentData) {
-        setScanModal({ open: true, student: studentData, marking: false, marked: false, error: "" });
+        // Check whether this student is already marked in ANY of today's classes
+        const alreadyMarked = todayClasses.some((cls: any) =>
+          (cls.markedCallUpNos ?? []).includes(callUpNo)
+        );
+        setScanModal({
+          open: true,
+          student: studentData,
+          marking: false,
+          marked: false,
+          alreadyMarked,
+          error: "",
+        });
       } else {
-        setScanModal({ open: true, student: null, marking: false, marked: false, error: "No matching student found." });
+        setScanModal({
+          open: true, student: null, marking: false, marked: false, alreadyMarked: false,
+          error: "No matching student found.",
+        });
       }
     } catch (err: any) {
       const msg = err?.response?.data?.msg ?? "Failed to find student";
-      setScanModal({ open: true, student: null, marking: false, marked: false, error: msg });
+      setScanModal({
+        open: true, student: null, marking: false, marked: false, alreadyMarked: false,
+        error: msg,
+      });
     }
   };
 
@@ -221,7 +237,7 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
   };
 
   const closeScanModal = () => {
-    setScanModal({ open: false, student: null, marking: false, marked: false, error: "" });
+    setScanModal({ open: false, student: null, marking: false, marked: false, alreadyMarked: false, error: "" });
   };
 
   // Auto-close scan modal after successful mark
@@ -245,7 +261,7 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
       const result = await createNewDay(form.date, form.batchId);
       if (result?.success) {
         setPaperModal(false);
-        setForm({ batchId: activeBatches.find((b) => b.active)?.id || "", date: new Date().toISOString().split("T")[0] });
+        setForm({ batchId: "", date: new Date().toISOString().split("T")[0] });
         fetchTodayClasses();
       } else {
         alert(result?.msg || "Failed to create new day");
@@ -520,10 +536,25 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
                   )}
                 </div>
               </div>
+
+              {scanModal.alreadyMarked ? (
+                /* ── Already marked notice ── */
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-700">Already Marked Present</p>
+                    <p className="text-xs text-emerald-600">This student's attendance has already been recorded for today.</p>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex justify-end gap-2">
                 <Btn v="outline" onClick={closeScanModal}>Cancel</Btn>
-                <Btn onClick={handleMarkFromScan} disabled={scanModal.marking}>
-                  {scanModal.marking ? "Marking…" : "Mark Attendance"}
+                <Btn
+                  onClick={handleMarkFromScan}
+                  disabled={scanModal.marking || scanModal.alreadyMarked}
+                >
+                  {scanModal.marking ? "Marking…" : scanModal.alreadyMarked ? "Already Marked" : "Mark Attendance"}
                 </Btn>
               </div>
             </>
