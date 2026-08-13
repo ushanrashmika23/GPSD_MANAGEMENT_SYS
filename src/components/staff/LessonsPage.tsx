@@ -38,10 +38,10 @@ export function LessonsPage({ materials, batches, role }: LessonsPageProps) {
 
   const fetchLessons = () => {
     getAllLessons().then((data) => {
-      console.log(data);
-      setLocalLessons(data.data.data);
+      setLocalLessons(data?.data?.data ?? []);
     }).catch((error) => {
       console.error("Error fetching lessons:", error);
+      setLocalLessons([]);
     });
   }
 
