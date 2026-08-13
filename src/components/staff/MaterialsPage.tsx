@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FileText, Video, Upload, Pen, Trash2, BookMarked, Search, X, Play, Eye, BookOpen, User, CheckCircle, AlertCircle, Calendar, ShieldOff, ShieldCheck, Clock } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FileText, Video, Upload, Pen, Trash2, BookMarked, Search, X, Play, Eye, BookOpen, User, CheckCircle, AlertCircle, Calendar, ShieldOff, ShieldCheck, Clock, ChevronDown } from "lucide-react";
 import { Badge, Btn, Input, Sel, Modal, Card } from "../ui";
 import { EmptyState } from "../ui";
 import { FLabel } from "../ui";
@@ -245,6 +245,48 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
     ? materials.filter((m) => m.batchIds.length > 0)
     : materials;
 
+  // ── Group materials by lesson (for accordion) ────────────────────────────
+  const lessonGroups = useMemo(() => {
+    const map = new Map<string, { lessonName: string; materials: Material[] }>();
+    filtered.forEach((mat) => {
+      const key = mat.lessonId || "__uncategorized__";
+      if (!map.has(key)) {
+        map.set(key, {
+          lessonName: key === "__uncategorized__" ? "Uncategorized" : (mat.lessonName || "Unknown Lesson"),
+          materials: [],
+        });
+      }
+      map.get(key)!.materials.push(mat);
+    });
+    const groups = Array.from(map.entries()).map(([lessonId, data]) => ({ lessonId, ...data }));
+    // Sort alphabetically; "Uncategorized" always last
+    groups.sort((a, b) => {
+      if (a.lessonId === "__uncategorized__") return 1;
+      if (b.lessonId === "__uncategorized__") return -1;
+      return a.lessonName.localeCompare(b.lessonName);
+    });
+    return groups;
+  }, [filtered]);
+
+  // ── Accordion state ──────────────────────────────────────────────────────
+  const [expandedLessons, setExpandedLessons] = useState<Set<string>>(new Set());
+
+  // Auto-expand all groups when the grouping changes
+  useEffect(() => {
+    if (lessonGroups.length > 0) {
+      setExpandedLessons(new Set(lessonGroups.map((g) => g.lessonId)));
+    }
+  }, [lessonGroups.length]);
+
+  const toggleLesson = (lessonId: string) => {
+    setExpandedLessons((prev) => {
+      const next = new Set(prev);
+      if (next.has(lessonId)) next.delete(lessonId);
+      else next.add(lessonId);
+      return next;
+    });
+  };
+
   // ── Clear all filters ──────────────────────────────────────────────────────
   const clearFilters = () => {
     setSearchInput("");
@@ -302,9 +344,9 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
       }));
       setMaterialAccesses(mapped);
 
-      // Pre-fill expiry date pickers for batches without access
+      // Pre-fill expiry date pickers for active batches without access
       const dates: Record<string, string> = {};
-      batches.forEach((b) => {
+      batches.filter((b) => b.active).forEach((b) => {
         if (!mapped.some((a) => a.batch_id === b.id)) {
           dates[b.id] = defaultExpiryDate();
         }
@@ -614,126 +656,168 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
         </div>
       </Card>
 
-      {/* ── Material Cards Grid ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        {filtered.length === 0 ? (
-          <div className="col-span-full">
-            <EmptyState icon={BookMarked} title="No materials" desc="Upload documents or video recordings to get started." />
-          </div>
-        ) : filtered.map((mat) => {
-          const batchChips = mat.batchNames.length > 0 ? mat.batchNames : [];
-          const visibleBatches = batchChips.slice(0, 2);
-          const overflowCount = batchChips.length - 2;
-          const lessonLabel = mat.lessonName || "Unknown Lesson";
-          const lessonTypeLabel = mat.lessonType ? mat.lessonType.toUpperCase() : "";
+      {/* ── Material Cards by Lesson (Accordion) ──────────────────────────────── */}
+      {filtered.length === 0 ? (
+        <EmptyState icon={BookMarked} title="No materials" desc="Upload documents or video recordings to get started." />
+      ) : (
+        <div className="space-y-4">
+          {lessonGroups.map((group) => {
+            const isExpanded = expandedLessons.has(group.lessonId);
+            const docCount = group.materials.filter((m) => m.type === "DOCUMENT").length;
+            const vidCount = group.materials.filter((m) => m.type === "VIDEO").length;
 
-          return (
-            <div
-              key={mat.id}
-              role="button"
-              tabIndex={0}
-              aria-label={`${mat.title}, ${typeLabel(mat.type)} material`}
-              onClick={() => isAdmin && openEdit(mat)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isAdmin && openEdit(mat); } }}
-              className={`group rounded-[18px] border border-border bg-card shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-200 ease-out overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isAdmin ? "" : "pointer-events-none"}`}
-            >
-              {/* ── Thumbnail (16:9) ──────────────────────────────────────────── */}
-              <div className={`relative w-full aspect-video overflow-hidden ${thumbnailPlaceholder(mat.type)}`}>
-                {/* Type badge — top-left */}
-                <Badge v={typeBadgeV(mat.type)} className="absolute top-3 left-3 z-10 shadow-sm">
-                  {typeLabel(mat.type)}
-                </Badge>
-
-                {/* Action icon — top-right */}
-                <div className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
-                  {typeActionIcon(mat.type)}
-                </div>
-
-                {/* Center icon — large placeholder */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-20">
-                  {mat.type === "DOCUMENT"
-                    ? <FileText className="w-20 h-20 text-white" />
-                    : <Play className="w-20 h-20 text-white" />
-                  }
-                </div>
-
-                {/* Hover zoom layer */}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-200" />
-              </div>
-
-              {/* ── Card Body ─────────────────────────────────────────────────── */}
-              <div className="p-4 space-y-3">
-                {/* Title */}
-                <h3 className="text-[15px] font-bold text-foreground leading-snug line-clamp-2" title={mat.title}>
-                  {mat.title}
-                </h3>
-
-                {/* Lesson info */}
-                <p className="text-xs text-muted-foreground">
-                  {lessonLabel}
-                  {lessonTypeLabel && (
-                    <span className="ml-1 text-[11px] text-muted-foreground/70">· {lessonTypeLabel}</span>
-                  )}
-                </p>
-
-                {/* Metadata row */}
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <BookOpen className="w-3.5 h-3.5" />
-                    {mat.lessonName ? "1 Lesson" : "No Lesson"}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Eye className="w-3.5 h-3.5" />
-                    {mat.accessCount} View{mat.accessCount !== 1 ? "s" : ""}
-                  </span>
-                </div>
-
-                {/* Divider */}
-                <hr className="border-border/60" />
-
-                {/* Accessed Batches */}
-                <div>
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    Accessed Batches
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {batchChips.length === 0 ? (
-                      <span className="text-xs text-muted-foreground/60 italic">No Access Assigned</span>
-                    ) : (
-                      <>
-                        {visibleBatches.map((b) => (
-                          <span
-                            key={b.id}
-                            className="inline-flex px-2.5 py-1 rounded-md text-xs font-medium bg-muted/60 text-muted-foreground border border-border/50"
-                          >
-                            {b.name}
-                          </span>
-                        ))}
-                        {overflowCount > 0 && (
-                          <span className="inline-flex px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-                            +{overflowCount} More
-                          </span>
-                        )}
-                      </>
-                    )}
+            return (
+              <Card key={group.lessonId} className="overflow-hidden">
+                {/* ── Accordion Header ───────────────────────────────────────── */}
+                <button
+                  type="button"
+                  onClick={() => toggleLesson(group.lessonId)}
+                  className="w-full flex items-center gap-3 px-5 py-4 hover:bg-muted/30 transition-colors duration-150 text-left"
+                >
+                  {/* Lesson icon */}
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                    <BookOpen className="w-5 h-5 text-primary" />
                   </div>
-                </div>
 
-                {/* Footer */}
-                <div className="flex items-center justify-between pt-1 !mt-4">
-                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground/80">
-                    <User className="w-3 h-3" />
-                    Uploaded by Unknown
+                  {/* Lesson name + count */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-[15px] font-semibold text-foreground truncate">
+                        {group.lessonName}
+                      </h3>
+                      {group.lessonId !== "__uncategorized__" && group.materials[0]?.lessonType && (
+                        <Badge v="muted" className="text-[10px] shrink-0">
+                          {group.materials[0].lessonType.toUpperCase()}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {group.materials.length} material{group.materials.length !== 1 ? "s" : ""}
+                      {docCount > 0 && ` · ${docCount} document${docCount !== 1 ? "s" : ""}`}
+                      {vidCount > 0 && ` · ${vidCount} video${vidCount !== 1 ? "s" : ""}`}
+                    </p>
+                  </div>
+
+                  {/* Material count badge */}
+                  <span className="inline-flex items-center justify-center min-w-[28px] h-7 rounded-full bg-muted px-2 text-xs font-bold text-muted-foreground shrink-0">
+                    {group.materials.length}
                   </span>
-                  <span className="text-[11px] text-muted-foreground/80">
-                    {fmtDate(mat.uploadDate) || "-"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+
+                  {/* Chevron */}
+                  <ChevronDown
+                    className={`w-5 h-5 text-muted-foreground shrink-0 transition-transform duration-200 ${
+                      isExpanded ? "rotate-0" : "-rotate-90"
+                    }`}
+                  />
+                </button>
+
+                {/* ── Accordion Body ─────────────────────────────────────────── */}
+                {isExpanded && (
+                  <div className="px-5 pb-5 pt-1 border-t border-border/50">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
+                      {group.materials.map((mat) => {
+                        const batchChips = mat.batchNames.length > 0 ? mat.batchNames : [];
+                        const visibleBatches = batchChips.slice(0, 2);
+                        const overflowCount = batchChips.length - 2;
+                        const lessonLabel = mat.lessonName || "Unknown Lesson";
+                        const lessonTypeLabel = mat.lessonType ? mat.lessonType.toUpperCase() : "";
+
+                        return (
+                          <div
+                            key={mat.id}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`${mat.title}, ${typeLabel(mat.type)} material`}
+                            onClick={() => isAdmin && openEdit(mat)}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isAdmin && openEdit(mat); } }}
+                            className={`group rounded-[18px] border border-border bg-card shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-200 ease-out overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isAdmin ? "" : "pointer-events-none"}`}
+                          >
+                            {/* ── Thumbnail (16:9) ────────────────────────────── */}
+                            <div className={`relative w-full aspect-video overflow-hidden ${thumbnailPlaceholder(mat.type)}`}>
+                              <Badge v={typeBadgeV(mat.type)} className="absolute top-3 left-3 z-10 shadow-sm">
+                                {typeLabel(mat.type)}
+                              </Badge>
+                              <div className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
+                                {typeActionIcon(mat.type)}
+                              </div>
+                              <div className="absolute inset-0 flex items-center justify-center opacity-20">
+                                {mat.type === "DOCUMENT"
+                                  ? <FileText className="w-20 h-20 text-white" />
+                                  : <Play className="w-20 h-20 text-white" />
+                                }
+                              </div>
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-200" />
+                            </div>
+
+                            {/* ── Card Body ───────────────────────────────────── */}
+                            <div className="p-4 space-y-3">
+                              <h3 className="text-[15px] font-bold text-foreground leading-snug line-clamp-2" title={mat.title}>
+                                {mat.title}
+                              </h3>
+                              <p className="text-xs text-muted-foreground">
+                                {lessonLabel}
+                                {lessonTypeLabel && (
+                                  <span className="ml-1 text-[11px] text-muted-foreground/70">· {lessonTypeLabel}</span>
+                                )}
+                              </p>
+                              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <BookOpen className="w-3.5 h-3.5" />
+                                  {mat.lessonName ? "1 Lesson" : "No Lesson"}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Eye className="w-3.5 h-3.5" />
+                                  {mat.accessCount} View{mat.accessCount !== 1 ? "s" : ""}
+                                </span>
+                              </div>
+                              <hr className="border-border/60" />
+                              <div>
+                                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                  Accessed Batches
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {batchChips.length === 0 ? (
+                                    <span className="text-xs text-muted-foreground/60 italic">No Access Assigned</span>
+                                  ) : (
+                                    <>
+                                      {visibleBatches.map((b) => (
+                                        <span
+                                          key={b.id}
+                                          className="inline-flex px-2.5 py-1 rounded-md text-xs font-medium bg-muted/60 text-muted-foreground border border-border/50"
+                                        >
+                                          {b.name}
+                                        </span>
+                                      ))}
+                                      {overflowCount > 0 && (
+                                        <span className="inline-flex px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+                                          +{overflowCount} More
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between pt-1 !mt-4">
+                                <span className="flex items-center gap-1 text-[11px] text-muted-foreground/80">
+                                  <User className="w-3 h-3" />
+                                  Uploaded by Unknown
+                                </span>
+                                <span className="text-[11px] text-muted-foreground/80">
+                                  {fmtDate(mat.uploadDate) || "-"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Pagination ───────────────────────────────────────────────────────── */}
       <Pagination
@@ -890,14 +974,14 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
             <div>
               <FLabel>Batch Access</FLabel>
               <p className="text-xs text-muted-foreground mt-1 mb-3">
-                Grant or revoke access to batches. Students in granted batches can view this material until the expiry date.
+                Grant or revoke access to active batches. Students in granted batches can view this material until the expiry date.
               </p>
 
-              {batches.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic py-3">No batches available.</p>
+              {batches.filter((b) => b.active).length === 0 ? (
+                <p className="text-xs text-muted-foreground italic py-3">No active batches available.</p>
               ) : (
                 <div className="border border-border rounded-xl overflow-hidden divide-y divide-border">
-                  {batches.map((b) => {
+                  {batches.filter((b) => b.active).map((b) => {
                     const existingAccess = materialAccesses.find((a) => a.batch_id === b.id);
                     const isLoading = accessLoading[b.id] || accessLoading[existingAccess?.id ?? ""];
                     const isGranted = !!existingAccess;

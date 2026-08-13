@@ -256,6 +256,36 @@ const markAttendance = async (callUpNo: string): Promise<any> => {
     }
 };
 
+const unmarkAttendance = async (callUpNo: string): Promise<any> => {
+    try {
+        const response = await api.post("/attendance/unmark-attendance", { call_up_no: callUpNo });
+        return response.data;
+    } catch (error) {
+        console.error("Error unmarking attendance:", error);
+        throw error;
+    }
+};
+
+const getAttendanceHistory = async (page: number = 1, limit: number = 12): Promise<any> => {
+    try {
+        const response = await api.get(`/attendance/history?page=${page}&limit=${limit}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching attendance history:", error);
+        throw error;
+    }
+};
+
+const deleteClassDay = async (classDayId: string): Promise<any> => {
+    try {
+        const response = await api.delete(`/attendance/class-day/${classDayId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error deleting class day:", error);
+        throw error;
+    }
+};
+
 
 //================================ALL CALLS FOR MANIPULATING PAYMENTS====================================================
 
@@ -443,4 +473,24 @@ const togglePublishMark = async (paperId: string): Promise<any> => {
     }
 };
 
-export { getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark };
+const updatePaperApi = async (paperId: string, data: Record<string, any>): Promise<any> => {
+    try {
+        const response = await api.put(`/marks/paper/${paperId}`, data);
+        return response.data;
+    } catch (error) {
+        console.error("Error updating paper:", error);
+        throw error;
+    }
+};
+
+const deletePaperApi = async (paperId: string): Promise<any> => {
+    try {
+        const response = await api.delete(`/marks/paper/${paperId}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error deleting paper:", error);
+        throw error;
+    }
+};
+
+export { getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, unmarkAttendance, getAttendanceHistory, deleteClassDay, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark, updatePaperApi, deletePaperApi };

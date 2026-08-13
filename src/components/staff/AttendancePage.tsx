@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Search, CheckCircle, Clock, PlusCircle, QrCodeIcon, Users } from "lucide-react";
+import { Search, CheckCircle, Clock, PlusCircle, QrCodeIcon, Users, History, Trash2 } from "lucide-react";
 import { Btn, Input, Card, Badge, Avatar, EmptyState, Modal, FLabel, Sel } from "../ui";
 import { cn } from "../../lib/utils";
 import { QrScanner } from "../../lib/QrScanner";
 import type { Batch, Role, Student } from "../../lib/types";
-import { getTodayClasses, createNewDay, markAttendance, getAllStudents, getStudentById, getAllBatches } from "../../api/apiCalls";
+import { getTodayClasses, createNewDay, markAttendance, unmarkAttendance, getAttendanceHistory, deleteClassDay, getAllStudents, getStudentById, getAllBatches } from "../../api/apiCalls";
 import Pagination from "../ui/Pagination";
 
 interface AttendancePageProps {
@@ -28,6 +28,7 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
   const [search, setSearch] = useState("");
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [markedStudents, setMarkedStudents] = useState<Set<string>>(new Set());
+  const [unmarking, setUnmarking] = useState<Set<string>>(new Set());
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   // ── QR scanner ───────────────────────────────────────────────────────────
@@ -47,6 +48,13 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
   const [paperModal, setPaperModal] = useState(false);
   const [form, setForm] = useState({ batchId: "", date: new Date().toISOString().split("T")[0] });
   const [creating, setCreating] = useState(false);
+
+  // ── Attendance history modal ─────────────────────────────────────────────
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPagination, setHistoryPagination] = useState({ page: 1, totalPages: 1, pageSize: 12, totalRecords: 0 });
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   // ── Fetch batches from API ───────────────────────────────────────────────
   const fetchBatches = useCallback(async () => {
@@ -176,6 +184,35 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
     }
   };
 
+  // ── Unmark present from student list ─────────────────────────────────────
+  const handleUnmarkPresent = async (student: Student) => {
+    if (!window.confirm(`Do you need to unmark ${student.fullName}?`)) return;
+    setUnmarking((prev) => new Set(prev).add(student.callupNo));
+    try {
+      const result = await unmarkAttendance(student.callupNo);
+      if (result?.success) {
+        setMarkedStudents((prev) => {
+          const next = new Set(prev);
+          next.delete(student.callupNo);
+          return next;
+        });
+        // Refresh today's classes to update counts
+        fetchTodayClasses();
+      } else {
+        alert(result?.msg || "Failed to unmark attendance");
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.msg ?? err?.message ?? "Failed to unmark attendance";
+      alert(msg);
+    } finally {
+      setUnmarking((prev) => {
+        const next = new Set(prev);
+        next.delete(student.callupNo);
+        return next;
+      });
+    }
+  };
+
   // ── QR scan handler ──────────────────────────────────────────────────────
   const handleQrScan = async (value: string) => {
     const callUpNo = value.trim();
@@ -274,6 +311,65 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
     }
   };
 
+  // ── Fetch attendance history ─────────────────────────────────────────────
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const result = await getAttendanceHistory(historyPagination.page, historyPagination.pageSize);
+      const data = result?.data?.data ?? [];
+      const meta = result?.data?.meta ?? {};
+      setHistory(data);
+      setHistoryPagination((prev) => {
+        const perPage = meta.limit ?? prev.pageSize;
+        const lastPage = meta.pages ?? (meta.total != null ? Math.max(1, Math.ceil(meta.total / perPage)) : prev.totalPages);
+        return { page: meta.page ?? prev.page, totalPages: lastPage, pageSize: perPage, totalRecords: meta.total ?? prev.totalRecords };
+      });
+    } catch (err) {
+      console.error("Failed to fetch attendance history:", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historyPagination.page, historyPagination.pageSize]);
+
+  useEffect(() => {
+    if (historyOpen) fetchHistory();
+  }, [fetchHistory, historyOpen]);
+
+  // ── Delete a class day from history ──────────────────────────────────────
+  const handleDeleteClassDay = async (classDay: any) => {
+    const dayLabel = `${classDay.batch?.name ?? "Unknown Batch"} · ${new Date(classDay.date).toLocaleDateString()}`;
+    if (!window.confirm(`Do you need to delete the class day for ${dayLabel}? Its attendance records will also be removed.`)) return;
+    setDeletingIds((prev) => new Set(prev).add(classDay.id));
+    try {
+      const result = await deleteClassDay(classDay.id);
+      if (result?.success) {
+        // Move back a page if this was the only item on the last page
+        if (history.length === 1 && historyPagination.page > 1) {
+          setHistoryPagination((prev) => ({ ...prev, page: prev.page - 1 }));
+        } else {
+          fetchHistory();
+        }
+        // Refresh today's classes (deleted day may be today's) and clear selection if it was
+        fetchTodayClasses();
+        if (selectedClass?.id === classDay.id) {
+          setSelectedClass(null);
+          setMarkedStudents(new Set());
+        }
+      } else {
+        alert(result?.msg || "Failed to delete class day");
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.msg ?? err?.message ?? "Failed to delete class day";
+      alert(msg);
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(classDay.id);
+        return next;
+      });
+    }
+  };
+
   // ── Derived counts ───────────────────────────────────────────────────────
   const presentCount = selectedClass?.presentCount ?? 0;
   const unmarkedCount = selectedClass?.unmarkedCount ?? 0;
@@ -287,8 +383,8 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
           <h1 className="text-xl font-bold text-foreground">Attendance</h1>
           <p className="text-sm text-muted-foreground">Mark and track today's attendance</p>
         </div>
-        <Btn onClick={() => setPaperModal(true)}>
-          <PlusCircle className="w-4 h-4" />New Day
+        <Btn onClick={() => setHistoryOpen(true)}>
+          <History className="w-4 h-4" />History
         </Btn>
       </div>
 
@@ -422,9 +518,15 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
                       </div>
                       <div className="flex items-center gap-2">
                         {isMarked ? (
-                          <span className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-700">
-                            <CheckCircle className="w-3.5 h-3.5" />Present
-                          </span>
+                          <button
+                            onClick={() => handleUnmarkPresent(s)}
+                            disabled={unmarking.has(s.callupNo)}
+                            title="Click to unmark"
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-emerald-100 text-emerald-700 hover:bg-red-100 hover:text-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            {unmarking.has(s.callupNo) ? "Unmarking…" : "Present"}
+                          </button>
                         ) : (
                           <button
                             onClick={() => handleMarkPresent(s)}
@@ -595,6 +697,59 @@ export function AttendancePage({ batches: _batches, role }: AttendancePageProps)
               {creating ? "Creating…" : "Create Day"}
             </Btn>
           </div>
+        </div>
+      </Modal>
+
+      {/* ── Attendance History Modal ─────────────────────────────────────── */}
+      <Modal open={historyOpen} onClose={() => setHistoryOpen(false)} title="Attendance History" wide>
+        <div className="space-y-4">
+          {historyLoading ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">Loading history…</div>
+          ) : history.length === 0 ? (
+            <EmptyState icon={History} title="No class days" desc="No class days have been created yet." />
+          ) : (
+            <>
+              <div className="divide-y divide-border/50">
+                {history.map((cd: any) => {
+                  const deleting = deletingIds.has(cd.id);
+                  return (
+                    <div key={cd.id} className="flex items-center gap-3 px-2 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground">{cd.batch?.name ?? "Unknown Batch"}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(cd.date).toLocaleDateString()}</p>
+                      </div>
+                      <div className="flex gap-4 text-xs">
+                        <span className="flex items-center gap-1 text-emerald-600">
+                          <CheckCircle className="w-3.5 h-3.5" />{cd.presentCount} Present
+                        </span>
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <Clock className="w-3.5 h-3.5" />{cd.unmarkedCount} Unmarked
+                        </span>
+                      </div>
+                      <Btn
+                        v="outline"
+                        sz="sm"
+                        onClick={() => handleDeleteClassDay(cd)}
+                        disabled={deleting}
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {deleting ? "Deleting…" : "Delete"}
+                      </Btn>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <Pagination
+                page={historyPagination.page}
+                totalPages={historyPagination.totalPages}
+                pageSize={historyPagination.pageSize}
+                totalRecords={historyPagination.totalRecords}
+                setPagination={setHistoryPagination}
+              />
+            </>
+          )}
         </div>
       </Modal>
     </div>
