@@ -1,6 +1,30 @@
 import api from "./axios";
 import type { Lesson } from "../components/staff/LessonsPage";
 
+//=====================================API calls for authentication===========================================
+
+// Send the Google ID token to the backend, get a JWT back
+const firebaseLogin = async (idToken: string): Promise<any> => {
+    try {
+        const response = await api.post("/auth/firebase-login", { idToken });
+        return response.data;
+    } catch (error) {
+        console.error("Error during Firebase login:", error);
+        throw error;
+    }
+};
+
+// Restore the session from the JWT stored in localStorage (attached automatically by the axios interceptor)
+const autoLogin = async (): Promise<any> => {
+    try {
+        const response = await api.post("/auth/auto-login");
+        return response.data;
+    } catch (error) {
+        console.error("Error during auto login:", error);
+        throw error;
+    }
+};
+
 //=====================================API call for manipulating lessons===========================================
 
 //API call to get all lessons with pagination and search
@@ -493,4 +517,77 @@ const deletePaperApi = async (paperId: string): Promise<any> => {
     }
 };
 
-export { getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, unmarkAttendance, getAttendanceHistory, deleteClassDay, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark, updatePaperApi, deletePaperApi };
+//================================ALL CALLS FOR MANIPULATING USERS (ADMIN / STAFF)====================================================
+
+interface UserFormData {
+    email?: string;
+    password?: string;
+    firstName?: string;
+    lastName?: string;
+    mobile?: string;
+    address?: string;
+    role?: string;
+    isActive?: boolean;
+}
+
+const getAllUsers = async (page: number = 1, limit: number = 50, search: string = ""): Promise<any> => {
+    try {
+        const response = await api.get(`/users?page=${page}&limit=${limit}&search=${search}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching users:", error);
+        throw error;
+    }
+};
+
+const addUser = async (userData: UserFormData): Promise<any> => {
+    const data = {
+        email: userData.email,
+        password: userData.password,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        mobile: userData.mobile,
+        address: userData.address,
+        role: userData.role,
+    };
+    try {
+        const response = await api.post("/users", data);
+        return response.data;
+    } catch (error) {
+        console.error("Error adding user:", error);
+        throw error;
+    }
+};
+
+const updateUser = async (userId: string, userData: UserFormData): Promise<any> => {
+    const data: Record<string, any> = {};
+    if (userData.email !== undefined) data.email = userData.email;
+    if (userData.firstName !== undefined) data.firstName = userData.firstName;
+    if (userData.lastName !== undefined) data.lastName = userData.lastName;
+    if (userData.mobile !== undefined) data.mobile = userData.mobile;
+    if (userData.address !== undefined) data.address = userData.address;
+    if (userData.role !== undefined) data.role = userData.role;
+    // Only include isActive if explicitly set (boolean)
+    if (typeof userData.isActive === "boolean") {
+        data.isActive = userData.isActive;
+    }
+    try {
+        const response = await api.put(`/users/${userId}`, data);
+        return response.data;
+    } catch (error) {
+        console.error("Error updating user:", error);
+        throw error;
+    }
+};
+
+const resetUserPassword = async (userId: string, newPassword: string): Promise<any> => {
+    try {
+        const response = await api.put(`/users/${userId}/reset-password`, { password: newPassword });
+        return response.data;
+    } catch (error) {
+        console.error("Error resetting user password:", error);
+        throw error;
+    }
+};
+
+export { firebaseLogin, autoLogin, getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, unmarkAttendance, getAttendanceHistory, deleteClassDay, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark, updatePaperApi, deletePaperApi, getAllUsers, addUser, updateUser, resetUserPassword };

@@ -22,6 +22,11 @@ export interface AppUser {
   role: Role;
   active: boolean;
   lastLogin?: string;
+  // Raw backend fields (snake_case mapped) — used to prefill the edit form
+  firstName?: string;
+  lastName?: string;
+  mobile?: string;
+  address?: string;
 }
 
 export interface Batch {

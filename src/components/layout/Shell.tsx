@@ -128,9 +128,7 @@ export function Shell({ user, onLogout, state }: ShellProps) {
           />
         ) : null;
       case "users":
-        return role === "admin" ? (
-          <UsersPage users={state.users} setUsers={state.setUsers} />
-        ) : null;
+        return role === "admin" ? <UsersPage /> : null;
       case "settings":
         return role === "admin" ? <SettingsPage /> : null;
       default:
