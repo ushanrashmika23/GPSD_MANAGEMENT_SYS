@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Video, Upload, Pen, Trash2, BookMarked, Search, X, Play, Eye, BookOpen, User, CheckCircle, AlertCircle, Calendar, ShieldOff, ShieldCheck, Clock, ChevronDown } from "lucide-react";
+import { FileText, Video, Upload, Pen, Trash2, BookMarked, Search, X, Play, Eye, BookOpen, User, CheckCircle, AlertCircle, Calendar, ShieldOff, ShieldCheck, Clock, ChevronDown, FolderOpen, LayoutGrid, List } from "lucide-react";
 import { Badge, Btn, Input, Sel, Modal, Card } from "../ui";
 import { EmptyState } from "../ui";
 import { FLabel } from "../ui";
@@ -109,6 +109,139 @@ function CircularProgress({ task, onDismiss }: { task: UploadTask; onDismiss: ()
   );
 }
 
+// ── Card helpers (shared by every view) ─────────────────────────────────────
+const typeLabel = (t: string) => t === "DOCUMENT" ? "Document" : "Video";
+
+const typeBadgeV = (t: string): "success" | "info" =>
+  t === "DOCUMENT" ? "success" : "info";
+
+const typeActionIcon = (t: string) =>
+  t === "DOCUMENT"
+    ? <FileText className="w-4 h-4 text-white" />
+    : <Play className="w-4 h-4 text-white" />;
+
+const thumbnailPlaceholder = (t: string) =>
+  t === "DOCUMENT"
+    ? "bg-gradient-to-br from-emerald-500 to-teal-600"
+    : "bg-gradient-to-br from-blue-500 to-indigo-600";
+
+// ── View modes for the materials list ───────────────────────────────────────
+type ViewMode = "grouped" | "grid" | "list";
+
+const VIEW_OPTIONS: { value: ViewMode; label: string; icon: typeof LayoutGrid }[] = [
+  { value: "grouped", label: "Grouped", icon: FolderOpen },
+  { value: "grid", label: "Grid", icon: LayoutGrid },
+  { value: "list", label: "List", icon: List },
+];
+
+// ── Material card (used by the grouped and grid views) ───────────────────────
+// The `compact` variant trims padding, text sizes and gaps — used by the grid
+// view so its cards read smaller without changing the grouped-view card.
+function MaterialCard({
+  mat,
+  disabled,
+  onOpen,
+  compact = false,
+}: {
+  mat: Material;
+  disabled: boolean;
+  onOpen: () => void;
+  compact?: boolean;
+}) {
+  const batchChips = mat.batchNames.length > 0 ? mat.batchNames : [];
+  const visibleBatches = batchChips.slice(0, 2);
+  const overflowCount = batchChips.length - 2;
+  const lessonLabel = mat.lessonName || "Unknown Lesson";
+  const lessonTypeLabel = mat.lessonType ? mat.lessonType.toUpperCase() : "";
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${mat.title}, ${typeLabel(mat.type)} material`}
+      onClick={() => !disabled && onOpen()}
+      onKeyDown={(e) => { if (!disabled && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(); } }}
+      className={`group rounded-[18px] border border-border bg-card shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-200 ease-out overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${disabled ? "pointer-events-none" : ""}`}
+    >
+      {/* ── Thumbnail (16:9) ────────────────────────────── */}
+      <div className={`relative w-full aspect-video overflow-hidden ${thumbnailPlaceholder(mat.type)}`}>
+        <Badge v={typeBadgeV(mat.type)} className={`absolute top-3 left-3 z-10 shadow-sm ${compact ? "text-[10px]" : ""}`}>
+          {typeLabel(mat.type)}
+        </Badge>
+        <div className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
+          {typeActionIcon(mat.type)}
+        </div>
+        <div className="absolute inset-0 flex items-center justify-center opacity-20">
+          {mat.type === "DOCUMENT"
+            ? <FileText className={`${compact ? "w-14 h-14" : "w-20 h-20"} text-white`} />
+            : <Play className={`${compact ? "w-14 h-14" : "w-20 h-20"} text-white`} />
+          }
+        </div>
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-200" />
+      </div>
+
+      {/* ── Card Body ───────────────────────────────────── */}
+      <div className={compact ? "p-3 space-y-2" : "p-4 space-y-3"}>
+        <h3 className={`font-bold text-foreground leading-snug line-clamp-2 ${compact ? "text-sm" : "text-[15px]"}`} title={mat.title}>
+          {mat.title}
+        </h3>
+        <p className={`text-muted-foreground ${compact ? "text-[11px]" : "text-xs"}`}>
+          {lessonLabel}
+          {lessonTypeLabel && (
+            <span className="ml-1 text-[11px] text-muted-foreground/70">· {lessonTypeLabel}</span>
+          )}
+        </p>
+        <div className={`flex items-center justify-between text-muted-foreground ${compact ? "text-[11px]" : "text-xs"}`}>
+          <span className="flex items-center gap-1">
+            <BookOpen className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />
+            {mat.lessonName ? "1 Lesson" : "No Lesson"}
+          </span>
+          <span className="flex items-center gap-1">
+            <Eye className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />
+            {mat.accessCount} View{mat.accessCount !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <hr className="border-border/60" />
+        <div>
+          <p className={`font-semibold text-muted-foreground uppercase tracking-wide ${compact ? "text-[10px] mb-1.5" : "text-[11px] mb-2"}`}>
+            Accessed Batches
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {batchChips.length === 0 ? (
+              <span className={`text-muted-foreground/60 italic ${compact ? "text-[11px]" : "text-xs"}`}>No Access Assigned</span>
+            ) : (
+              <>
+                {visibleBatches.map((b) => (
+                  <span
+                    key={b.id}
+                    className={`inline-flex rounded-md font-medium bg-muted/60 text-muted-foreground border border-border/50 ${compact ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-xs"}`}
+                  >
+                    {b.name}
+                  </span>
+                ))}
+                {overflowCount > 0 && (
+                  <span className={`inline-flex rounded-md font-medium bg-primary/10 text-primary border border-primary/20 ${compact ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-xs"}`}>
+                    +{overflowCount} More
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        <div className={`flex items-center justify-between pt-1 ${compact ? "!mt-2" : "!mt-4"}`}>
+          <span className={`flex items-center gap-1 text-muted-foreground/80 ${compact ? "text-[10px]" : "text-[11px]"}`}>
+            <User className="w-3 h-3" />
+            Uploaded by Unknown
+          </span>
+          <span className={`text-muted-foreground/80 ${compact ? "text-[10px]" : "text-[11px]"}`}>
+            {fmtDate(mat.uploadDate) || "-"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MaterialsPage({ role }: MaterialsPageProps) {
   // ── State ──────────────────────────────────────────────────────────────────
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -120,6 +253,7 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
   const [batchFilter, setBatchFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [accessFilter, setAccessFilter] = useState<"all" | "granted">("all");
+  const [view, setView] = useState<ViewMode>("grouped");
   const [modal, setModal] = useState<"add" | "edit" | null>(null);
   const [selected, setSelected] = useState<Material | null>(null);
   const [form, setForm] = useState<Partial<Material>>({ type: "DOCUMENT", batchIds: [], batchNames: [], accessCount: 0 });
@@ -298,22 +432,6 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
   };
 
   const hasActiveFilters = search !== "" || batchFilter !== "all" || typeFilter !== "all" || accessFilter !== "all";
-
-  // ── Card helpers ────────────────────────────────────────────────────────────
-  const typeLabel = (t: string) => t === "DOCUMENT" ? "Document" : "Video";
-
-  const typeBadgeV = (t: string): "success" | "info" =>
-    t === "DOCUMENT" ? "success" : "info";
-
-  const typeActionIcon = (t: string) =>
-    t === "DOCUMENT"
-      ? <FileText className="w-4 h-4 text-white" />
-      : <Play className="w-4 h-4 text-white" />;
-
-  const thumbnailPlaceholder = (t: string) =>
-    t === "DOCUMENT"
-      ? "bg-gradient-to-br from-emerald-500 to-teal-600"
-      : "bg-gradient-to-br from-blue-500 to-indigo-600";
 
   // ── Modal helpers ──────────────────────────────────────────────────────────
   const openAdd = () => {
@@ -596,9 +714,9 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
 
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
       <Card className="p-4">
-        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-          {/* Search */}
-          <div className="relative flex-1 w-full sm:max-w-xs">
+        <div className="space-y-3">
+          {/* Search — line 1 */}
+          <div className="relative w-full max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               className="pl-9"
@@ -607,6 +725,9 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
               onChange={handleSearchChange}
             />
           </div>
+
+          {/* Filters + view style — line 2 */}
+          <div className="flex flex-wrap items-center gap-3">
 
           {/* Access filter pills */}
           <div className="flex overflow-hidden rounded-xl border border-border bg-muted/40 p-0.5 shrink-0">
@@ -653,6 +774,34 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
               <X className="w-3.5 h-3.5" />Clear Filters
             </Btn>
           )}
+
+          {/* View style radio — grouped | grid | list */}
+          <div
+            role="radiogroup"
+            aria-label="View style"
+            className="flex overflow-hidden rounded-xl border border-border bg-muted/40 p-0.5 shrink-0 sm:ml-auto"
+          >
+            {VIEW_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={view === value}
+                title={`${label} view`}
+                onClick={() => setView(value)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  view === value
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">{label}</span>
+              </button>
+            ))}
+          </div>
+
+          </div>
         </div>
       </Card>
 
@@ -711,18 +860,42 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
                   />
                 </button>
 
-                {/* ── Accordion Body ─────────────────────────────────────────── */}
+                {/* ── Accordion Body — same lesson grouping in every view ────── */}
                 {isExpanded && (
                   <div className="px-5 pb-5 pt-1 border-t border-border/50">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
-                      {group.materials.map((mat) => {
-                        const batchChips = mat.batchNames.length > 0 ? mat.batchNames : [];
-                        const visibleBatches = batchChips.slice(0, 2);
-                        const overflowCount = batchChips.length - 2;
-                        const lessonLabel = mat.lessonName || "Unknown Lesson";
-                        const lessonTypeLabel = mat.lessonType ? mat.lessonType.toUpperCase() : "";
+                    {/* Grouped view: standard cards */}
+                    {view === "grouped" && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
+                        {group.materials.map((mat) => (
+                          <MaterialCard
+                            key={mat.id}
+                            mat={mat}
+                            disabled={!isAdmin}
+                            onOpen={() => openEdit(mat)}
+                          />
+                        ))}
+                      </div>
+                    )}
 
-                        return (
+                    {/* Grid view: smaller cards, tighter columns */}
+                    {view === "grid" && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-4">
+                        {group.materials.map((mat) => (
+                          <MaterialCard
+                            key={mat.id}
+                            mat={mat}
+                            compact
+                            disabled={!isAdmin}
+                            onOpen={() => openEdit(mat)}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* List view: one compact row per material */}
+                    {view === "list" && (
+                      <div className="divide-y divide-border pt-2">
+                        {group.materials.map((mat) => (
                           <div
                             key={mat.id}
                             role="button"
@@ -730,87 +903,59 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
                             aria-label={`${mat.title}, ${typeLabel(mat.type)} material`}
                             onClick={() => isAdmin && openEdit(mat)}
                             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isAdmin && openEdit(mat); } }}
-                            className={`group rounded-[18px] border border-border bg-card shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-200 ease-out overflow-hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isAdmin ? "" : "pointer-events-none"}`}
+                            className={`-mx-5 flex flex-wrap items-center gap-3 px-5 py-3.5 hover:bg-muted/30 transition-colors duration-150 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isAdmin ? "" : "pointer-events-none"}`}
                           >
-                            {/* ── Thumbnail (16:9) ────────────────────────────── */}
-                            <div className={`relative w-full aspect-video overflow-hidden ${thumbnailPlaceholder(mat.type)}`}>
-                              <Badge v={typeBadgeV(mat.type)} className="absolute top-3 left-3 z-10 shadow-sm">
-                                {typeLabel(mat.type)}
-                              </Badge>
-                              <div className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
-                                {typeActionIcon(mat.type)}
-                              </div>
-                              <div className="absolute inset-0 flex items-center justify-center opacity-20">
-                                {mat.type === "DOCUMENT"
-                                  ? <FileText className="w-20 h-20 text-white" />
-                                  : <Play className="w-20 h-20 text-white" />
-                                }
-                              </div>
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-200" />
+                            {/* Type icon chip */}
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${thumbnailPlaceholder(mat.type)}`}>
+                              {typeActionIcon(mat.type)}
                             </div>
 
-                            {/* ── Card Body ───────────────────────────────────── */}
-                            <div className="p-4 space-y-3">
-                              <h3 className="text-[15px] font-bold text-foreground leading-snug line-clamp-2" title={mat.title}>
+                            {/* Title + lesson */}
+                            <div className="flex-1 min-w-[180px]">
+                              <p className="text-sm font-semibold text-foreground truncate" title={mat.title}>
                                 {mat.title}
-                              </h3>
-                              <p className="text-xs text-muted-foreground">
-                                {lessonLabel}
-                                {lessonTypeLabel && (
-                                  <span className="ml-1 text-[11px] text-muted-foreground/70">· {lessonTypeLabel}</span>
-                                )}
                               </p>
-                              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <BookOpen className="w-3.5 h-3.5" />
-                                  {mat.lessonName ? "1 Lesson" : "No Lesson"}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Eye className="w-3.5 h-3.5" />
-                                  {mat.accessCount} View{mat.accessCount !== 1 ? "s" : ""}
-                                </span>
-                              </div>
-                              <hr className="border-border/60" />
-                              <div>
-                                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                                  Accessed Batches
-                                </p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {batchChips.length === 0 ? (
-                                    <span className="text-xs text-muted-foreground/60 italic">No Access Assigned</span>
-                                  ) : (
-                                    <>
-                                      {visibleBatches.map((b) => (
-                                        <span
-                                          key={b.id}
-                                          className="inline-flex px-2.5 py-1 rounded-md text-xs font-medium bg-muted/60 text-muted-foreground border border-border/50"
-                                        >
-                                          {b.name}
-                                        </span>
-                                      ))}
-                                      {overflowCount > 0 && (
-                                        <span className="inline-flex px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary border border-primary/20">
-                                          +{overflowCount} More
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center justify-between pt-1 !mt-4">
-                                <span className="flex items-center gap-1 text-[11px] text-muted-foreground/80">
-                                  <User className="w-3 h-3" />
-                                  Uploaded by Unknown
-                                </span>
-                                <span className="text-[11px] text-muted-foreground/80">
-                                  {fmtDate(mat.uploadDate) || "-"}
-                                </span>
-                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {mat.lessonName || "Unknown Lesson"}
+                              </p>
                             </div>
+
+                            <Badge v={typeBadgeV(mat.type)}>{typeLabel(mat.type)}</Badge>
+
+                            {/* Batch chips */}
+                            <div className="flex items-center gap-1.5 flex-wrap min-w-[140px]">
+                              {mat.batchNames.length === 0 ? (
+                                <span className="text-xs text-muted-foreground/60 italic">No Access</span>
+                              ) : (
+                                <>
+                                  {mat.batchNames.slice(0, 2).map((b) => (
+                                    <span
+                                      key={b.id}
+                                      className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-muted/60 text-muted-foreground border border-border/50"
+                                    >
+                                      {b.name}
+                                    </span>
+                                  ))}
+                                  {mat.batchNames.length > 2 && (
+                                    <span className="inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium bg-primary/10 text-primary border border-primary/20">
+                                      +{mat.batchNames.length - 2} More
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </div>
+
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                              <Eye className="w-3.5 h-3.5" />
+                              {mat.accessCount}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground/80 shrink-0">
+                              {fmtDate(mat.uploadDate) || "-"}
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </Card>

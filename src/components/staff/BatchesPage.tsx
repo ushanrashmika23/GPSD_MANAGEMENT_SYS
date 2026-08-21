@@ -101,6 +101,9 @@ function BatchForm({
             <span className="text-sm font-medium">Active Batch</span>
           </label>
         </div>
+        <p className="col-span-2 -mt-1 text-xs text-muted-foreground">
+          Deactivating a batch also deactivates all its students; activating it reactivates them.
+        </p>
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <Btn v="outline" onClick={onCancel} disabled={saving}>Cancel</Btn>

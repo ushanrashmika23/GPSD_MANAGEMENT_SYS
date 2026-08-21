@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Plus, Edit2, Eye, Trash2, KeyRound, CalendarCheck, Wallet, FileText, Info } from "lucide-react";
 import { Badge, Btn, Input, Modal, Card, Avatar, FLabel, BatchDropdown, ConfirmDialog, StatCard } from "../ui";
-import { fmtDate } from "../../lib/utils";
+import { fmtDate, cn } from "../../lib/utils";
 import type { Student, Batch, AttendanceRecord, Payment, Mark, Role } from "../../lib/types";
 import { getAllStudents, getStudentById, addStudent, updateStudent, deleteStudent, resetStudentPassword, getAllBatches } from "../../api/apiCalls";
 import Pagination from "../ui/Pagination";
@@ -281,6 +281,11 @@ function ProfileModal({
     </div>
   );
 
+  // ── Activation depends on the selected batch ─────────────────────────────
+  // A student can only be active while their batch is active.
+  const selectedBatch = batches.find((b) => b.id === (form.batchId || profile?.batch_id));
+  const batchActive = selectedBatch ? selectedBatch.active : false;
+
   if (!student) return null;
 
   return (
@@ -347,16 +352,27 @@ function ProfileModal({
             {/* ── Status toggle (edit mode only) ── */}
             {editing && (
               <div className="flex items-center gap-3">
-                <label className="relative inline-flex items-center cursor-pointer">
+                <label className={cn(
+                  "relative inline-flex items-center",
+                  batchActive ? "cursor-pointer" : "cursor-not-allowed opacity-60",
+                )}>
                   <input
                     type="checkbox"
                     className="sr-only peer"
-                    checked={form.active ?? true}
+                    checked={batchActive && (form.active ?? true)}
+                    disabled={!batchActive}
                     onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
                   />
                   <div className="w-9 h-5 bg-muted-foreground/30 peer-checked:bg-emerald-500 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
                 </label>
-                <span className="text-sm font-medium">{form.active ? "Active" : "Inactive"}</span>
+                <span className="text-sm font-medium">
+                  {batchActive && form.active ? "Active" : "Inactive"}
+                </span>
+                {!batchActive && (
+                  <span className="text-xs text-amber-600 dark:text-amber-400">
+                    Activation requires an active batch
+                  </span>
+                )}
               </div>
             )}
 
@@ -376,7 +392,13 @@ function ProfileModal({
                   <BatchDropdown
                     batches={batches}
                     value={form.batchId ?? ""}
-                    onChange={(id) => setForm((f) => ({ ...f, batchId: id }))}
+                    onChange={(id) =>
+                      setForm((f) => {
+                        const b = batches.find((x) => x.id === id);
+                        // Moving to an inactive batch forces the student inactive
+                        return { ...f, batchId: id, ...(b && !b.active ? { active: false } : {}) };
+                      })
+                    }
                     placeholder="Select batch"
                   />
                 ) : (
