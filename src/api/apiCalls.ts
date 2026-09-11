@@ -1,5 +1,5 @@
 import api from "./axios";
-import type { Lesson } from "../components/staff/LessonsPage";
+import type { Lesson } from "../lib/types";
 
 //=====================================API calls for authentication===========================================
 
@@ -359,9 +359,20 @@ const deletePayment = async (paymentId: number): Promise<any> => {
 
 //================================ALL CALLS FOR MANIPULATING MATERIALS====================================================
 
-const getAllMaterials = async (page: number = 1, limit: number = 12, search: string = "", batchId: string = "", contentType: string = ""): Promise<any> => {
+const getAllMaterials = async (page: number = 1, limit: number = 12, search: string = "", batchId: string = "", contentType: string = "", lessonId: string = ""): Promise<any> => {
     try {
-        const response = await api.get(`/materials?page=${page}&limit=${limit}&search=${search}&batch_id=${batchId}&content_type=${contentType}`);
+        // params (not a hand-built query string) so axios URL-encodes the
+        // search text — spaces and special characters reach the backend intact.
+        const response = await api.get("/materials", {
+            params: {
+                page,
+                limit,
+                search: search || undefined,
+                batch_id: batchId || undefined,
+                content_type: contentType || undefined,
+                lesson_id: lessonId || undefined,
+            },
+        });
         return response.data;
     } catch (error) {
         console.error("Error fetching materials:", error);
@@ -403,6 +414,37 @@ const deleteMaterial = async (materialId: string): Promise<any> => {
     }
 };
 
+// GET /materials/:id/signed-url — a short-lived signed R2 URL for the
+// material's file. Video playback streams straight from this URL.
+const getMaterialSignedUrl = async (materialId: string): Promise<{ url: string; type: string }> => {
+    try {
+        const response = await api.get(`/materials/${materialId}/signed-url`);
+        return response.data?.data;
+    } catch (error) {
+        console.error("Error fetching material signed URL:", error);
+        throw error;
+    }
+};
+
+// GET /materials/:id/file — fetch the document's bytes THROUGH the backend (so
+// the R2 bucket needs no CORS for pdf.js's XHR fetch) and hand the PDF viewer a
+// local blob URL. Callers should revoke the URL when done.
+const getMaterialFileBlobUrl = async (materialId: string): Promise<string> => {
+    try {
+        const response = await api.get(`/materials/${materialId}/file`, {
+            responseType: "blob",
+        });
+        const blob =
+            response.data instanceof Blob
+                ? response.data
+                : new Blob([response.data], { type: "application/pdf" });
+        return URL.createObjectURL(blob);
+    } catch (error) {
+        console.error("Error fetching material file:", error);
+        throw error;
+    }
+};
+
 //================================ALL CALLS FOR MATERIAL ACCESS====================================================
 
 const getMaterialAccesses = async (materialId: string): Promise<any> => {
@@ -437,9 +479,18 @@ const revokeBatchAccess = async (access_id: string): Promise<any> => {
 
 //================================ALL CALLS FOR MARKS / PAPERS====================================================
 
-const getAllPapers = async (page: number = 1, limit: number = 12, batchId: string = ""): Promise<any> => {
+const getAllPapers = async (page: number = 1, limit: number = 12, batchId: string = "", search: string = ""): Promise<any> => {
     try {
-        const response = await api.get(`/marks/papers?page=${page}&limit=${limit}&batch_id=${batchId}`);
+        // params (not a hand-built query string) so axios URL-encodes the
+        // search text — spaces and special characters reach the backend intact.
+        const response = await api.get("/marks/papers", {
+            params: {
+                page,
+                limit,
+                batch_id: batchId || undefined,
+                search: search || undefined,
+            },
+        });
         return response.data;
     } catch (error) {
         console.error("Error fetching papers:", error);
@@ -590,4 +641,4 @@ const resetUserPassword = async (userId: string, newPassword: string): Promise<a
     }
 };
 
-export { firebaseLogin, autoLogin, getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, unmarkAttendance, getAttendanceHistory, deleteClassDay, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark, updatePaperApi, deletePaperApi, getAllUsers, addUser, updateUser, resetUserPassword };
+export { firebaseLogin, autoLogin, getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, unmarkAttendance, getAttendanceHistory, deleteClassDay, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialSignedUrl, getMaterialFileBlobUrl, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark, updatePaperApi, deletePaperApi, getAllUsers, addUser, updateUser, resetUserPassword };

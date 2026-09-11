@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Layers, CalendarCheck, Award,
-  CreditCard, BookMarked, BookOpen, QrCode, MessageSquare,
+  CreditCard, BookMarked, QrCode, MessageSquare,
   BarChart2, UserCog, Settings, GraduationCap, LogOut, Menu,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -23,7 +23,6 @@ export const NAV_ITEMS: NavItem[] = [
   { section: "marks",         label: "Marks",          icon: Award,           group: "academic" },
   { section: "fees",          label: "Fees",           icon: CreditCard,      group: "finance" },
   { section: "materials",     label: "Materials",      icon: BookMarked,      group: "content" },
-  { section: "lessons",       label: "Lessons",        icon: BookOpen,        group: "content" },
   { section: "qrcodes",       label: "QR Codes",       icon: QrCode,          group: "tools" },
   { section: "communication", label: "Communication",  icon: MessageSquare,   group: "tools",  adminOnly: true },
   { section: "reports",       label: "Reports",        icon: BarChart2,       group: "admin",  adminOnly: true },

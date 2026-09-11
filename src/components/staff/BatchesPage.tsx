@@ -34,6 +34,40 @@ function HighlightText({ text, term }: { text: string; term: string }) {
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+/** "14:30" / "14:30:00" / ISO datetime → "2:30 PM" (falls back to the raw value) */
+function fmtTime(t?: string | null): string {
+  if (!t) return "—";
+  const m = String(t).match(/(\d{1,2}):(\d{2})/);
+  if (!m) return t;
+  const h24 = +m[1];
+  const min = m[2];
+  const ap = h24 >= 12 ? "PM" : "AM";
+  const h = h24 % 12 || 12;
+  return `${h}:${min} ${ap}`;
+}
+
+// Mirror of the backend validation (batch.service.js) — runs before submit
+function validateForm(form: Partial<Batch>, isAdd: boolean): Record<string, string> {
+  const errs: Record<string, string> = {};
+  const has = (v: any) => v !== undefined && v !== null && v !== "";
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+  if (!has(form.name) || !String(form.name).trim()) errs.name = "Batch name is required";
+  else if (String(form.name).trim().length > 100) errs.name = "Must be at most 100 characters";
+  if (!has(form.day)) errs.day = "Select a day";
+  if (isAdd && !has(form.examDate)) errs.examDate = "Exam date is required";
+  if (has(form.examDate) && isNaN(new Date(String(form.examDate)).getTime())) errs.examDate = "Enter a valid date";
+  if (!has(form.startTime)) errs.startTime = "Start time is required";
+  else if (has(form.startTime) && !TIME_RE.test(String(form.startTime))) errs.startTime = "Use HH:MM 24-hour format";
+  if (!has(form.endTime)) errs.endTime = "End time is required";
+  else if (has(form.endTime) && !TIME_RE.test(String(form.endTime))) errs.endTime = "Use HH:MM 24-hour format";
+  else if (has(form.startTime) && has(form.endTime) && String(form.startTime) >= String(form.endTime))
+    errs.endTime = "Must be after start time";
+  if (!has(form.fee) || !(Number(form.fee) > 0)) errs.fee = "Must be a positive number";
+
+  return errs;
+}
+
 function BatchForm({
   form,
   setForm,
@@ -41,6 +75,10 @@ function BatchForm({
   onSave,
   onCancel,
   saving,
+  errors,
+  clearError,
+  formError,
+  onDelete,
 }: {
   form: Partial<Batch>;
   setForm: React.Dispatch<React.SetStateAction<Partial<Batch>>>;
@@ -48,36 +86,93 @@ function BatchForm({
   onSave: () => void;
   onCancel: () => void;
   saving: boolean;
+  errors: Record<string, string>;
+  clearError: (key: string) => void;
+  formError: string | null;
+  onDelete: (() => void) | null;
 }) {
+  const errCls = "border-red-500 focus:ring-red-500/40";
+  const field = (key: string, el: React.ReactNode) => (
+    <>
+      {el}
+      {errors[key] && <p className="mt-1 text-xs text-red-600">{errors[key]}</p>}
+    </>
+  );
+
   return (
     <div className="space-y-4">
+      {formError && (
+        <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600">{formError}</p>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
           <FLabel>Batch Name</FLabel>
-          <Input value={form.name || ""} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Batch A — 2025" />
+          {field("name",
+            <Input
+              value={form.name || ""}
+              onChange={(e) => { setForm((f) => ({ ...f, name: e.target.value })); clearError("name"); }}
+              placeholder="e.g. Batch A — 2025"
+              className={errors.name ? errCls : ""}
+            />
+          )}
         </div>
         <div>
           <FLabel>Day</FLabel>
-          <Sel value={form.day || ""} onChange={(e) => setForm((f) => ({ ...f, day: e.target.value }))}>
-            <option value="">Select day</option>
-            {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
-          </Sel>
+          {field("day",
+            <Sel
+              value={form.day || ""}
+              onChange={(e) => { setForm((f) => ({ ...f, day: e.target.value })); clearError("day"); }}
+              className={errors.day ? errCls : ""}
+            >
+              <option value="">Select day</option>
+              {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </Sel>
+          )}
         </div>
         <div>
           <FLabel>Exam Date</FLabel>
-          <Input type="date" value={form.examDate || ""} onChange={(e) => setForm((f) => ({ ...f, examDate: e.target.value }))} />
+          {field("examDate",
+            <Input
+              type="date"
+              value={form.examDate || ""}
+              onChange={(e) => { setForm((f) => ({ ...f, examDate: e.target.value })); clearError("examDate"); }}
+              className={errors.examDate ? errCls : ""}
+            />
+          )}
         </div>
         <div>
           <FLabel>Start Time</FLabel>
-          <Input type="time" value={form.startTime || ""} onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))} />
+          {field("startTime",
+            <Input
+              type="time"
+              value={form.startTime || ""}
+              onChange={(e) => { setForm((f) => ({ ...f, startTime: e.target.value })); clearError("startTime"); }}
+              className={errors.startTime ? errCls : ""}
+            />
+          )}
         </div>
         <div>
           <FLabel>End Time</FLabel>
-          <Input type="time" value={form.endTime || ""} onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))} />
+          {field("endTime",
+            <Input
+              type="time"
+              value={form.endTime || ""}
+              onChange={(e) => { setForm((f) => ({ ...f, endTime: e.target.value })); clearError("endTime"); }}
+              className={errors.endTime ? errCls : ""}
+            />
+          )}
         </div>
         <div>
           <FLabel>Monthly Fee (LKR)</FLabel>
-          <Input type="number" value={form.fee || ""} onChange={(e) => setForm((f) => ({ ...f, fee: +e.target.value }))} placeholder="3500" />
+          {field("fee",
+            <Input
+              type="number"
+              value={form.fee || ""}
+              onChange={(e) => { setForm((f) => ({ ...f, fee: +e.target.value })); clearError("fee"); }}
+              placeholder="3500"
+              className={errors.fee ? errCls : ""}
+            />
+          )}
         </div>
         <div className="flex items-end pb-2">
           <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -105,11 +200,23 @@ function BatchForm({
           Deactivating a batch also deactivates all its students; activating it reactivates them.
         </p>
       </div>
-      <div className="flex justify-end gap-2 pt-2">
-        <Btn v="outline" onClick={onCancel} disabled={saving}>Cancel</Btn>
-        <Btn onClick={onSave} disabled={saving}>
-          {saving ? "Saving…" : modal === "add" ? "Create Batch" : "Save Changes"}
-        </Btn>
+      <div className="flex items-center gap-2 pt-2">
+        {onDelete && (
+          <Btn
+            v="outline"
+            onClick={onDelete}
+            disabled={saving}
+            className="justify-center text-red-600 hover:text-red-700 hover:border-red-300"
+          >
+            <Trash2 className="w-4 h-4" /> Delete Batch
+          </Btn>
+        )}
+        <div className="flex justify-end gap-2 ml-auto">
+          <Btn v="outline" onClick={onCancel} disabled={saving}>Cancel</Btn>
+          <Btn onClick={onSave} disabled={saving}>
+            {saving ? "Saving…" : modal === "add" ? "Create Batch" : "Save Changes"}
+          </Btn>
+        </div>
       </div>
     </div>
   );
@@ -126,7 +233,18 @@ export function BatchesPage({ role }: BatchesPageProps) {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Batch | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const clearError = useCallback((key: string) => {
+    setErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
@@ -171,7 +289,12 @@ export function BatchesPage({ role }: BatchesPageProps) {
   }, [fetchBatches]);
 
   const save = async () => {
+    const errs = validateForm(form, modal === "add");
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
     setSaving(true);
+    setFormError(null);
     try {
       const body = {
         name: form.name,
@@ -189,8 +312,9 @@ export function BatchesPage({ role }: BatchesPageProps) {
       }
       setModal(null);
       fetchBatches();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to save batch:", error);
+      setFormError(error?.response?.data?.msg ?? "Failed to save batch. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -202,6 +326,7 @@ export function BatchesPage({ role }: BatchesPageProps) {
     try {
       await deleteBatch(deleteTarget.id);
       setDeleteTarget(null);
+      setModal(null);
       fetchBatches();
     } catch (error) {
       console.error("Failed to delete batch:", error);
@@ -218,7 +343,7 @@ export function BatchesPage({ role }: BatchesPageProps) {
           <p className="text-sm text-muted-foreground">{batches.filter((b) => b.active).length} active batches</p>
         </div>
         {role === "admin" && (
-          <Btn onClick={() => { setForm({ active: true }); setModal("add"); }}>
+          <Btn onClick={() => { setForm({ active: true }); setErrors({}); setFormError(null); setModal("add"); }}>
             <Plus className="w-4 h-4" />New Batch
           </Btn>
         )}
@@ -237,9 +362,11 @@ export function BatchesPage({ role }: BatchesPageProps) {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-foreground"><HighlightText text={b.name} term={search} /></h3>
-                <p className="text-xs text-muted-foreground mt-0.5">{b.day} · {b.startTime} – {b.endTime}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate" title={`${b.day} · ${fmtTime(b.startTime)} – ${fmtTime(b.endTime)}`}>
+                  {b.day} · {fmtTime(b.startTime)} – {fmtTime(b.endTime)}
+                </p>
                 {b.examDate && (
-                  <p className="text-xs text-muted-foreground/70 mt-0.5">Exam: {b.examDate}</p>
+                  <p className="text-xs text-muted-foreground/70 mt-0.5 truncate">Exam: {b.examDate}</p>
                 )}
               </div>
               <Badge v={b.active ? "success" : "muted"}>{b.active ? "Active" : "Inactive"}</Badge>
@@ -256,14 +383,9 @@ export function BatchesPage({ role }: BatchesPageProps) {
             </div>
             <div className="flex items-center gap-2">
               {role === "admin" && (
-                <>
-                  <Btn v="outline" sz="sm" className="flex-1 justify-center" onClick={() => { setSelected(b); setForm({ ...b }); setModal("edit"); }}>
-                    <Edit2 className="w-3.5 h-3.5" /> Edit
-                  </Btn>
-                  <Btn v="outline" sz="sm" className="justify-center text-muted-foreground hover:text-red-600 hover:border-red-300" onClick={() => setDeleteTarget(b)}>
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Btn>
-                </>
+                <Btn v="outline" sz="sm" className="flex-1 justify-center" onClick={() => { setSelected(b); setForm({ ...b }); setErrors({}); setFormError(null); setModal("edit"); }}>
+                  <Edit2 className="w-3.5 h-3.5" /> Edit
+                </Btn>
               )}
             </div>
           </Card>
@@ -273,10 +395,10 @@ export function BatchesPage({ role }: BatchesPageProps) {
       <Pagination page={pagination.page} totalPages={pagination.totalPages} pageSize={pagination.pageSize} totalRecords={pagination.totalRecords} setPagination={setPagination} />
 
       <Modal open={modal === "add"} onClose={() => setModal(null)} title="Create New Batch">
-        <BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} saving={saving} />
+        <BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} saving={saving} errors={errors} clearError={clearError} formError={formError} onDelete={null} />
       </Modal>
       <Modal open={modal === "edit"} onClose={() => setModal(null)} title="Edit Batch">
-        <BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} saving={saving} />
+        <BatchForm form={form} setForm={setForm} modal={modal} onSave={save} onCancel={() => setModal(null)} saving={saving} errors={errors} clearError={clearError} formError={formError} onDelete={() => setDeleteTarget(selected)} />
       </Modal>
 
       <ConfirmDialog

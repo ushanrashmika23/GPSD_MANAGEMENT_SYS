@@ -14,7 +14,6 @@ import { AttendancePage }  from "../staff/AttendancePage";
 import { MarksPage }       from "../staff/MarksPage";
 import { FeesPage }        from "../staff/FeesPage";
 import { MaterialsPage }   from "../staff/MaterialsPage";
-import { LessonsPage }     from "../staff/LessonsPage";
 import { QRCodesPage }     from "../staff/QRCodesPage";
 
 // Admin-only pages
@@ -94,16 +93,6 @@ export function Shell({ user, onLogout, state }: ShellProps) {
       case "materials":
         return (
           <MaterialsPage role={role} />
-        );
-      case "lessons":
-        return (
-          <LessonsPage
-            lessons={state.lessons}
-            setLessons={state.setLessons}
-            materials={state.materials}
-            batches={state.batches}
-            role={role}
-          />
         );
       case "qrcodes":
         return <QRCodesPage students={state.students} batches={state.batches} />;

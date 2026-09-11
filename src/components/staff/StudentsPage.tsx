@@ -24,13 +24,153 @@ function HighlightText({ text, term }: { text: string; term: string }) {
   );
 }
 
+// ── Validation helpers ─────────────────────────────────────────────────────────
+type FieldErrors = Record<string, string>;
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MOBILE_RE = /^[0-9+\-()\s]{7,20}$/;
+const PASSWORD_MIN = 6;
+// Max-length rules — mirror backend/src/services/student.service.js
+const NAME_MAX = 100; // first/last name, parent name
+const TEXT_MAX = 255; // address
+const SCHOOL_MAX = 150;
+const CALL_UP_NO_MAX = 50;
+
+// validateStudentForm(form) → per-field error messages. All fields are required
+// (mirrors backend rules). includePassword/includeEmail default to true.
+function validateStudentForm(
+  form: Record<string, any>,
+  { includePassword = true, includeEmail = true }: { includePassword?: boolean; includeEmail?: boolean } = {},
+): FieldErrors {
+  const errs: FieldErrors = {};
+  const required: Array<[string, string]> = [
+    ["firstName", "First name"],
+    ["lastName", "Last name"],
+    ["callupNo", "Call-up No."],
+    ["mobile", "Mobile"],
+    ["school", "School"],
+    ["address", "Address"],
+    ["parentName", "Parent name"],
+    ["parentMobile", "Parent mobile"],
+    ["batchId", "Batch"],
+  ];
+  if (includePassword) required.push(["password", "Password"]);
+  if (includeEmail) required.push(["email", "Email"]);
+
+  for (const [key, label] of required) {
+    if (!String(form[key] ?? "").trim()) errs[key] = `${label} is required.`;
+  }
+
+  const email = String(form.email ?? "").trim();
+  if (includeEmail && email && !EMAIL_RE.test(email)) {
+    errs.email = "Enter a valid email address.";
+  }
+
+  const mobile = String(form.mobile ?? "").trim();
+  if (mobile && !MOBILE_RE.test(mobile)) {
+    errs.mobile = "Enter a valid mobile number.";
+  }
+
+  const parentMobile = String(form.parentMobile ?? "").trim();
+  if (parentMobile && !MOBILE_RE.test(parentMobile)) {
+    errs.parentMobile = "Enter a valid mobile number.";
+  }
+
+  const password = String(form.password ?? "");
+  if (includePassword && password && password.length < PASSWORD_MIN) {
+    errs.password = `Password must be at least ${PASSWORD_MIN} characters.`;
+  }
+
+  // Max lengths — must match the backend, which 400s on oversized fields
+  const maxLengths: Array<[string, string, number]> = [
+    ["firstName", "First name", NAME_MAX],
+    ["lastName", "Last name", NAME_MAX],
+    ["callupNo", "Call-up No.", CALL_UP_NO_MAX],
+    ["school", "School", SCHOOL_MAX],
+    ["address", "Address", TEXT_MAX],
+    ["parentName", "Parent name", NAME_MAX],
+  ];
+  for (const [key, label, max] of maxLengths) {
+    const val = String(form[key] ?? "").trim();
+    if (val.length > max) errs[key] = `${label} must be at most ${max} characters.`;
+  }
+
+  return errs;
+}
+
+// ── AddFormField ──────────────────────────────────────────────────────────────
+// Module-level so the input is never remounted: a component defined INSIDE
+// another component is a new type on every render, which makes React replace
+// the input (and drop focus) after the first keystroke.
+function AddFormField({
+  label, type, placeholder, span, value, error, onChange,
+}: {
+  label: string;
+  type?: string;
+  placeholder?: string;
+  span?: boolean;
+  value: string;
+  error?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className={span ? "col-span-2" : ""}>
+      <FLabel>{label}</FLabel>
+      <Input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        required
+        className={error ? "border-red-500 focus:ring-red-500/40" : ""}
+      />
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+// ── ProfileField ──────────────────────────────────────────────────────────────
+// Read-only field by default; double-click (or the Edit button) starts editing.
+// Module-level so the input is never remounted (see AddFormField note).
+function ProfileField({
+  label, value, placeholder = "", readOnly, error, onStartEdit, onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  readOnly?: boolean;
+  error?: string;
+  onStartEdit?: () => void;
+  onChange?: (value: string) => void;
+}) {
+  return (
+    <div onDoubleClick={onStartEdit}>
+      <FLabel>{label}</FLabel>
+      <Input
+        value={value}
+        readOnly={readOnly}
+        onChange={(e) => onChange?.(e.target.value)}
+        placeholder={placeholder}
+        className={cn(
+          readOnly ? "opacity-70 cursor-default" : "",
+          error ? "border-red-500 focus:ring-red-500/40" : "",
+        )}
+      />
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 // ── AddStudentForm ─────────────────────────────────────────────────────────────
 function AddStudentForm({
-  form, setForm, batches, onSave, onCancel, saving,
+  form, setForm, batches, errors, clearError, msg, onSave, onCancel, saving,
 }: {
   form: Record<string, any>;
   setForm: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   batches: Batch[];
+  errors: FieldErrors;
+  clearError: (key: string) => void;
+  msg: { ok: boolean; text: string } | null;
   onSave: () => void;
   onCancel: () => void;
   saving: boolean;
@@ -38,56 +178,100 @@ function AddStudentForm({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <FLabel>First Name</FLabel>
-          <Input value={form.firstName || ""} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} placeholder="First name" required />
-        </div>
-        <div>
-          <FLabel>Last Name</FLabel>
-          <Input value={form.lastName || ""} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} placeholder="Last name" required />
-        </div>
-        <div>
-          <FLabel>Email</FLabel>
-          <Input type="email" value={form.email || ""} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="student@email.com" required />
-        </div>
-        <div>
-          <FLabel>Password</FLabel>
-          <Input type="password" value={form.password || ""} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} placeholder="Min. 6 characters" required />
-        </div>
-        <div>
-          <FLabel>Call-up No.</FLabel>
-          <Input value={form.callupNo || ""} onChange={(e) => setForm((f) => ({ ...f, callupNo: e.target.value }))} placeholder="MA001" required />
-        </div>
-        <div>
-          <FLabel>Mobile</FLabel>
-          <Input value={form.mobile || ""} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} placeholder="07X XXXXXXX" required />
-        </div>
-        <div className="col-span-2">
-          <FLabel>School</FLabel>
-          <Input value={form.school || ""} onChange={(e) => setForm((f) => ({ ...f, school: e.target.value }))} placeholder="School name" />
-        </div>
-        <div className="col-span-2">
-          <FLabel>Address</FLabel>
-          <Input value={form.address || ""} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="Full address" />
-        </div>
-        <div>
-          <FLabel>Parent Name</FLabel>
-          <Input value={form.parentName || ""} onChange={(e) => setForm((f) => ({ ...f, parentName: e.target.value }))} placeholder="Parent/guardian name" />
-        </div>
-        <div>
-          <FLabel>Parent Mobile</FLabel>
-          <Input value={form.parentMobile || ""} onChange={(e) => setForm((f) => ({ ...f, parentMobile: e.target.value }))} placeholder="07X XXXXXXX" />
-        </div>
+        <AddFormField
+          label="First Name"
+          value={String(form.firstName ?? "")}
+          error={errors.firstName}
+          onChange={(v) => { setForm((f) => ({ ...f, firstName: v })); clearError("firstName"); }}
+          placeholder="First name"
+        />
+        <AddFormField
+          label="Last Name"
+          value={String(form.lastName ?? "")}
+          error={errors.lastName}
+          onChange={(v) => { setForm((f) => ({ ...f, lastName: v })); clearError("lastName"); }}
+          placeholder="Last name"
+        />
+        <AddFormField
+          label="Email"
+          type="email"
+          value={String(form.email ?? "")}
+          error={errors.email}
+          onChange={(v) => { setForm((f) => ({ ...f, email: v })); clearError("email"); }}
+          placeholder="student@email.com"
+        />
+        <AddFormField
+          label="Password"
+          type="password"
+          value={String(form.password ?? "")}
+          error={errors.password}
+          onChange={(v) => { setForm((f) => ({ ...f, password: v })); clearError("password"); }}
+          placeholder="Min. 8 characters"
+        />
+        <AddFormField
+          label="Call-up No."
+          value={String(form.callupNo ?? "")}
+          error={errors.callupNo}
+          onChange={(v) => { setForm((f) => ({ ...f, callupNo: v })); clearError("callupNo"); }}
+          placeholder="MA001"
+        />
+        <AddFormField
+          label="Mobile"
+          value={String(form.mobile ?? "")}
+          error={errors.mobile}
+          onChange={(v) => { setForm((f) => ({ ...f, mobile: v })); clearError("mobile"); }}
+          placeholder="07X XXXXXXX"
+        />
+        <AddFormField
+          label="School"
+          span
+          value={String(form.school ?? "")}
+          error={errors.school}
+          onChange={(v) => { setForm((f) => ({ ...f, school: v })); clearError("school"); }}
+          placeholder="School name"
+        />
+        <AddFormField
+          label="Address"
+          span
+          value={String(form.address ?? "")}
+          error={errors.address}
+          onChange={(v) => { setForm((f) => ({ ...f, address: v })); clearError("address"); }}
+          placeholder="Full address"
+        />
+        <AddFormField
+          label="Parent Name"
+          value={String(form.parentName ?? "")}
+          error={errors.parentName}
+          onChange={(v) => { setForm((f) => ({ ...f, parentName: v })); clearError("parentName"); }}
+          placeholder="Parent/guardian name"
+        />
+        <AddFormField
+          label="Parent Mobile"
+          value={String(form.parentMobile ?? "")}
+          error={errors.parentMobile}
+          onChange={(v) => { setForm((f) => ({ ...f, parentMobile: v })); clearError("parentMobile"); }}
+          placeholder="07X XXXXXXX"
+        />
         <div className="col-span-2">
           <FLabel>Batch</FLabel>
           <BatchDropdown
             batches={batches}
             value={form.batchId ?? form.batchIds?.[0] ?? ""}
-            onChange={(id) => setForm((f) => ({ ...f, batchId: id, batchIds: [id] }))}
+            onChange={(id) => {
+              setForm((f) => ({ ...f, batchId: id, batchIds: [id] }));
+              clearError("batchId");
+            }}
             placeholder="Select batch"
           />
+          {errors.batchId && <p className="mt-1 text-xs text-red-600">{errors.batchId}</p>}
         </div>
       </div>
+
+      {msg && (
+        <div className={`text-sm p-3 rounded-lg ${msg.ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+          {msg.text}
+        </div>
+      )}
 
       <div className="flex justify-end gap-2 pt-2">
         <Btn v="outline" onClick={onCancel} disabled={saving}>Cancel</Btn>
@@ -120,6 +304,7 @@ function ProfileModal({
   const [form, setForm] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   // Confirmations
   const [saveConfirm, setSaveConfirm] = useState(false);
@@ -139,6 +324,7 @@ function ProfileModal({
     setLoading(true);
     setEditing(false);
     setMsg(null);
+    setErrors({});
     setResetOpen(false);
     setResetMsg(null);
     setResetForm({ password: "", confirm: "" });
@@ -265,21 +451,28 @@ function ProfileModal({
   const paymentCount = profile?.payment?.length ?? 0;
   const marksCount = profile?.student_marks?.length ?? 0;
 
-  // ── Helper: read-only field with double-click ──────────────────────────────
-  const Field = ({ label, keyName, placeholder = "", readOnlyAlways = false }: {
-    label: string; keyName: string; placeholder?: string; readOnlyAlways?: boolean;
-  }) => (
-    <div onDoubleClick={() => { if (!readOnlyAlways) setEditing(true); }}>
-      <FLabel>{label}</FLabel>
-      <Input
-        value={(form as any)[keyName] ?? ""}
-        readOnly={!editing || readOnlyAlways}
-        onChange={(e) => setForm((f) => ({ ...f, [keyName]: e.target.value }))}
-        placeholder={placeholder}
-        className={(!editing || readOnlyAlways) ? "opacity-70 cursor-default" : ""}
-      />
-    </div>
-  );
+  // ── Helper: clear a single field error as the user types (edit mode) ──────
+  const clearFieldError = (key: string) => {
+    setErrors((prev) => {
+      if (!prev[key]) return prev;
+      const n = { ...prev };
+      delete n[key];
+      return n;
+    });
+  };
+
+  // ── Validate before opening the save confirmation dialog ───────────────────
+  const handleSaveClick = () => {
+    // Email is read-only in edit mode — skip it; password is not part of editing
+    const errs = validateStudentForm(form, { includePassword: false, includeEmail: false });
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      setMsg({ ok: false, text: "Please fix the highlighted fields before saving." });
+      return;
+    }
+    setMsg(null);
+    setSaveConfirm(true);
+  };
 
   // ── Activation depends on the selected batch ─────────────────────────────
   // A student can only be active while their batch is active.
@@ -378,10 +571,38 @@ function ProfileModal({
 
             {/* ── Details grid ── */}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="First Name" keyName="firstName" />
-              <Field label="Last Name" keyName="lastName" />
-              <Field label="Call-up No." keyName="callupNo" />
-              <Field label="Mobile" keyName="mobile" />
+              <ProfileField
+                label="First Name"
+                value={String(form.firstName ?? "")}
+                readOnly={!editing}
+                error={errors.firstName}
+                onStartEdit={() => setEditing(true)}
+                onChange={(v) => { setForm((f) => ({ ...f, firstName: v })); clearFieldError("firstName"); }}
+              />
+              <ProfileField
+                label="Last Name"
+                value={String(form.lastName ?? "")}
+                readOnly={!editing}
+                error={errors.lastName}
+                onStartEdit={() => setEditing(true)}
+                onChange={(v) => { setForm((f) => ({ ...f, lastName: v })); clearFieldError("lastName"); }}
+              />
+              <ProfileField
+                label="Call-up No."
+                value={String(form.callupNo ?? "")}
+                readOnly={!editing}
+                error={errors.callupNo}
+                onStartEdit={() => setEditing(true)}
+                onChange={(v) => { setForm((f) => ({ ...f, callupNo: v })); clearFieldError("callupNo"); }}
+              />
+              <ProfileField
+                label="Mobile"
+                value={String(form.mobile ?? "")}
+                readOnly={!editing}
+                error={errors.mobile}
+                onStartEdit={() => setEditing(true)}
+                onChange={(v) => { setForm((f) => ({ ...f, mobile: v })); clearFieldError("mobile"); }}
+              />
               <div>
                 <FLabel>Email</FLabel>
                 <Input value={form.email ?? ""} readOnly className="opacity-70 cursor-default" title="Email cannot be changed" />
@@ -389,18 +610,27 @@ function ProfileModal({
               <div>
                 <FLabel>Batch</FLabel>
                 {editing ? (
-                  <BatchDropdown
-                    batches={batches}
-                    value={form.batchId ?? ""}
-                    onChange={(id) =>
-                      setForm((f) => {
-                        const b = batches.find((x) => x.id === id);
-                        // Moving to an inactive batch forces the student inactive
-                        return { ...f, batchId: id, ...(b && !b.active ? { active: false } : {}) };
-                      })
-                    }
-                    placeholder="Select batch"
-                  />
+                  <>
+                    <BatchDropdown
+                      batches={batches}
+                      value={form.batchId ?? ""}
+                      onChange={(id) => {
+                        setForm((f) => {
+                          const b = batches.find((x) => x.id === id);
+                          // Moving to an inactive batch forces the student inactive
+                          return { ...f, batchId: id, ...(b && !b.active ? { active: false } : {}) };
+                        });
+                        setErrors((prev) => {
+                          if (!prev.batchId) return prev;
+                          const n = { ...prev };
+                          delete n.batchId;
+                          return n;
+                        });
+                      }}
+                      placeholder="Select batch"
+                    />
+                    {errors.batchId && <p className="mt-1 text-xs text-red-600">{errors.batchId}</p>}
+                  </>
                 ) : (
                   <div className="px-3 py-2 text-sm border border-border rounded-lg bg-muted/30 text-foreground">
                     {profile?.batch?.name ?? "—"}
@@ -408,13 +638,41 @@ function ProfileModal({
                 )}
               </div>
               <div className="col-span-2">
-                <Field label="School" keyName="school" />
+                <ProfileField
+                  label="School"
+                  value={String(form.school ?? "")}
+                  readOnly={!editing}
+                  error={errors.school}
+                  onStartEdit={() => setEditing(true)}
+                  onChange={(v) => { setForm((f) => ({ ...f, school: v })); clearFieldError("school"); }}
+                />
               </div>
               <div className="col-span-2">
-                <Field label="Address" keyName="address" />
+                <ProfileField
+                  label="Address"
+                  value={String(form.address ?? "")}
+                  readOnly={!editing}
+                  error={errors.address}
+                  onStartEdit={() => setEditing(true)}
+                  onChange={(v) => { setForm((f) => ({ ...f, address: v })); clearFieldError("address"); }}
+                />
               </div>
-              <Field label="Parent Name" keyName="parentName" />
-              <Field label="Parent Mobile" keyName="parentMobile" />
+              <ProfileField
+                label="Parent Name"
+                value={String(form.parentName ?? "")}
+                readOnly={!editing}
+                error={errors.parentName}
+                onStartEdit={() => setEditing(true)}
+                onChange={(v) => { setForm((f) => ({ ...f, parentName: v })); clearFieldError("parentName"); }}
+              />
+              <ProfileField
+                label="Parent Mobile"
+                value={String(form.parentMobile ?? "")}
+                readOnly={!editing}
+                error={errors.parentMobile}
+                onStartEdit={() => setEditing(true)}
+                onChange={(v) => { setForm((f) => ({ ...f, parentMobile: v })); clearFieldError("parentMobile"); }}
+              />
             </div>
 
             {/* ── Hint ── */}
@@ -473,7 +731,7 @@ function ProfileModal({
             {editing && (
               <div className="flex justify-end gap-2 pt-2 border-t border-border">
                 <Btn v="outline" onClick={() => setEditing(false)} disabled={saving}>Cancel</Btn>
-                <Btn onClick={() => setSaveConfirm(true)} disabled={saving}>
+                <Btn onClick={handleSaveClick} disabled={saving}>
                   {saving ? "Saving…" : "Save Changes"}
                 </Btn>
               </div>
@@ -534,6 +792,11 @@ export function StudentsPage({ batches: _batches, attendance, payments, marks, r
   const [profileEditing, setProfileEditing] = useState(false);
   const [form, setForm] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
+  const [addErrors, setAddErrors] = useState<FieldErrors>({});
+  const [addMsg, setAddMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const [allBatches, setAllBatches] = useState<Batch[]>(_batches);
 
@@ -616,6 +879,8 @@ export function StudentsPage({ batches: _batches, attendance, payments, marks, r
   // ── Modal helpers ─────────────────────────────────────────────────────────
   const openAdd = () => {
     setForm({ active: true, registrationDate: new Date().toISOString().split("T")[0] });
+    setAddErrors({});
+    setAddMsg(null);
     setModal("add");
   };
   const openProfile = (s: Student, startInEdit = false) => {
@@ -624,29 +889,53 @@ export function StudentsPage({ batches: _batches, attendance, payments, marks, r
     setModal("profile");
   };
 
+  // Clear a single add-form field error as the user types
+  const clearAddError = (key: string) => {
+    setAddErrors((prev) => {
+      if (!prev[key]) return prev;
+      const n = { ...prev };
+      delete n[key];
+      return n;
+    });
+  };
+
   // ── Add Student save ──────────────────────────────────────────────────────
   const saveAdd = async () => {
+    const errs = validateStudentForm(form);
+    setAddErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      setAddMsg({ ok: false, text: "Please fix the highlighted fields before saving." });
+      return;
+    }
     setSaving(true);
+    setAddMsg(null);
     try {
-      if (!(form as any).firstName?.trim() || !(form as any).lastName?.trim()) {
-        alert("First name and last name are required.");
-        setSaving(false);
-        return;
-      }
-      if (!(form as any).email?.trim()) { alert("Email is required."); setSaving(false); return; }
-      if (!(form as any).password || (form as any).password.length < 6) {
-        alert("Password must be at least 6 characters.");
-        setSaving(false);
-        return;
-      }
       await addStudent(form);
       setModal(null);
+      setForm({});
+      setAddErrors({});
+      setAddMsg(null);
       fetchStudents();
     } catch (error: any) {
-      const msg = error?.response?.data?.msg ?? error?.message ?? "An error occurred";
-      alert("Failed to save student: " + msg);
+      setAddMsg({ ok: false, text: error?.response?.data?.msg ?? error?.message ?? "Failed to save student." });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── Delete from table (with confirmation dialog) ──────────────────────────
+  const handleDeleteRow = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteMsg(null);
+    try {
+      await deleteStudent(deleteTarget.callupNo);
+      setDeleteTarget(null);
+      fetchStudents();
+    } catch (err: any) {
+      setDeleteMsg(err?.response?.data?.msg ?? err?.message ?? "Failed to delete student.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -748,15 +1037,11 @@ export function StudentsPage({ batches: _batches, attendance, payments, marks, r
                           <button onClick={() => openProfile(s, true)} className="p-1.5 hover:bg-muted rounded-lg transition-colors" title="Edit">
                             <Info className="w-3.5 h-3.5 text-muted-foreground" />
                           </button>
-                          <button onClick={async () => {
-                            if (!window.confirm(`Delete ${s.fullName} (${s.callupNo})? This cannot be undone.`)) return;
-                            try {
-                              await deleteStudent(s.callupNo);
-                              fetchStudents();
-                            } catch (err: any) {
-                              alert("Failed to delete: " + (err?.response?.data?.msg ?? err?.message));
-                            }
-                          }} className="p-1.5 hover:bg-muted rounded-lg transition-colors" title="Delete">
+                          <button
+                            onClick={() => { setDeleteMsg(null); setDeleteTarget(s); }}
+                            className="p-1.5 hover:bg-muted rounded-lg transition-colors"
+                            title="Delete"
+                          >
                             <Trash2 className="w-3.5 h-3.5 text-red-500" />
                           </button>
                         </>
@@ -785,6 +1070,9 @@ export function StudentsPage({ batches: _batches, attendance, payments, marks, r
           form={form}
           setForm={setForm}
           batches={allBatches}
+          errors={addErrors}
+          clearError={clearAddError}
+          msg={addMsg}
           onSave={saveAdd}
           onCancel={() => setModal(null)}
           saving={saving}
@@ -807,6 +1095,28 @@ export function StudentsPage({ batches: _batches, attendance, payments, marks, r
           />
         )}
       </Modal>
+
+      {/* ── Delete confirmation dialog (table row) ── */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        danger
+        title="Delete Student"
+        message={
+          <div className="space-y-1">
+            <p>
+              <strong>{deleteTarget?.fullName}</strong> ({deleteTarget?.callupNo})
+            </p>
+            <p className="text-muted-foreground">
+              All attendance, payment, and mark records will be permanently removed. This cannot be undone.
+            </p>
+            {deleteMsg && <p className="pt-1 text-xs text-red-600">{deleteMsg}</p>}
+          </div>
+        }
+        confirmLabel="Delete Student"
+        busy={deleting}
+        onConfirm={handleDeleteRow}
+        onCancel={() => { setDeleteTarget(null); setDeleteMsg(null); }}
+      />
     </div>
   );
 }

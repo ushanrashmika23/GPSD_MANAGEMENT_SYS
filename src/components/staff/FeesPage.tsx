@@ -325,22 +325,6 @@ export function FeesPage({ payments: _propPayments, setPayments: setGlobalPaymen
     return map;
   }, [payments, year]);
 
-  // ── Student payment status (settled vs outstanding) ────────────────────
-  const studentStatus = useMemo(() => {
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const map = new Map<string, "settled" | "outstanding">();
-
-    students.forEach((s) => {
-      // Expected months: Jan to current month in the selected year
-      const expected = months.filter((m) => m <= currentMonth);
-      const allPaid = expected.every((m) => paymentLookup.has(`${s.id}-${m}`));
-      map.set(s.id, allPaid ? "settled" : "outstanding");
-    });
-
-    return map;
-  }, [students, months, paymentLookup]);
-
   // ── Batch start month per student (for muting pre-batch cells) ──────────
   const batchStartMonths = useMemo(() => {
     const map = new Map<string, string>(); // studentId → "YYYY-MM"
@@ -352,6 +336,24 @@ export function FeesPage({ payments: _propPayments, setPayments: setGlobalPaymen
     }
     return map;
   }, [students]);
+
+  // ── Student payment status (settled vs outstanding) ────────────────────
+  // Months a student owes in the selected year: from their batch's start
+  // month (they owe nothing before joining) up to the current month (future
+  // months are not due yet) — the same bounds the grid mutes cells by.
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const studentStatus = useMemo(() => {
+    const map = new Map<string, "settled" | "outstanding">();
+
+    students.forEach((s) => {
+      const batchStart = batchStartMonths.get(s.id) ?? "0000-01";
+      const expected = months.filter((m) => m >= batchStart && m <= currentMonth);
+      const allPaid = expected.every((m) => paymentLookup.has(`${s.id}-${m}`));
+      map.set(s.id, allPaid ? "settled" : "outstanding");
+    });
+
+    return map;
+  }, [students, months, paymentLookup, batchStartMonths, currentMonth]);
 
   // ── Filtered & paginated students ──────────────────────────────────────
   const filteredStudents = useMemo(() => {
@@ -759,7 +761,7 @@ export function FeesPage({ payments: _propPayments, setPayments: setGlobalPaymen
               {([
                 { value: "all", label: "All Students" },
                 { value: "settled", label: "Settled" },
-                { value: "outstanding", label: "Outstanding" },
+                { value: "outstanding", label: "Not Settled" },
               ] as const).map((tab) => (
                 <button
                   key={tab.value}

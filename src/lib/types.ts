@@ -8,7 +8,6 @@ export type NavSection =
   | "fees"
   | "marks"
   | "materials"
-  | "lessons"
   | "qrcodes"
   | "communication"
   | "reports"
@@ -108,13 +107,15 @@ export interface Material {
   accessCount: number;
 }
 
-// export interface Lesson {
-//   id: string;
-//   title: string;
-//   topic: string;
-//   batchIds: string[];
-//   date: string;
-// }
+// A lesson groups materials — rendered as a "basket" card in MaterialsPage.
+export interface Lesson {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  created_at: string;
+  materialCount?: number; // from backend _count.material (MaterialsPage overview)
+}
 
 export interface CMessage {
   id: string;
@@ -134,7 +135,6 @@ export interface AppState {
   papers: Paper[];
   marks: Mark[];
   materials: Material[];
-  // lessons: Lesson[];
   messages: CMessage[];
   users: AppUser[];
   setStudents: React.Dispatch<React.SetStateAction<Student[]>>;
@@ -144,7 +144,6 @@ export interface AppState {
   setPapers: React.Dispatch<React.SetStateAction<Paper[]>>;
   setMarks: React.Dispatch<React.SetStateAction<Mark[]>>;
   setMaterials: React.Dispatch<React.SetStateAction<Material[]>>;
-  // setLessons: React.Dispatch<React.SetStateAction<Lesson[]>>;
   setMessages: React.Dispatch<React.SetStateAction<CMessage[]>>;
   setUsers: React.Dispatch<React.SetStateAction<AppUser[]>>;
 }

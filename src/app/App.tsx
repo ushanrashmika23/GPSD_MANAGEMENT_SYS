@@ -6,12 +6,12 @@ import { mapBackendUser } from "../lib/utils";
 import {
   INIT_USERS, INIT_BATCHES, INIT_STUDENTS, INIT_ATT,
   INIT_PAYMENTS, INIT_PAPERS, INIT_MARKS, INIT_MATERIALS,
-  INIT_LESSONS, INIT_MESSAGES,
+  INIT_MESSAGES,
 } from "../lib/data";
 import type { AppUser, AppState } from "../lib/types";
 import type {
   Student, Batch, AttendanceRecord, Payment,
-  Paper, Mark, Material, Lesson, CMessage,
+  Paper, Mark, Material, CMessage,
 } from "../lib/types";
 
 export default function App() {
@@ -26,7 +26,6 @@ export default function App() {
   const [papers,     setPapers]     = useState<Paper[]>            (INIT_PAPERS);
   const [marks,      setMarks]      = useState<Mark[]>             (INIT_MARKS);
   const [materials,  setMaterials]  = useState<Material[]>         (INIT_MATERIALS);
-  const [lessons,    setLessons]    = useState<Lesson[]>           (INIT_LESSONS);
   const [messages,   setMessages]   = useState<CMessage[]>         (INIT_MESSAGES);
   const [users,      setUsers]      = useState<AppUser[]>          (INIT_USERS);
 
@@ -41,7 +40,14 @@ export default function App() {
       try {
         const res = await autoLogin();
         if (res?.success && res.data?.user) {
-          setCurrentUser(mapBackendUser(res.data.user));
+          // Drop student sessions — this system is for staff & admin only and
+          // the backend rejects student tokens on management routes anyway.
+          if (res.data.user.roles === "student") {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+          } else {
+            setCurrentUser(mapBackendUser(res.data.user));
+          }
         } else {
           localStorage.removeItem("token");
           localStorage.removeItem("user");
@@ -76,7 +82,6 @@ export default function App() {
     papers,     setPapers,
     marks,      setMarks,
     materials,  setMaterials,
-    lessons,    setLessons,
     messages,   setMessages,
     users,      setUsers,
   };

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Edit2, Award, Zap, Check, Lock, ArrowLeft, Pencil, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Plus, Check, Lock, ArrowLeft, Pencil, Users, PenLine, Trophy, Send, Search, X } from "lucide-react";
 import { Badge, Btn, Input, Sel, Modal, Card, Avatar } from "../ui";
 import { FLabel } from "../ui";
 import { fmtDate, cn } from "../../lib/utils";
@@ -119,6 +119,8 @@ export function MarksPage({ role }: MarksPageProps) {
   const [pageGroups, setPageGroups] = useState<PaperGroup[]>([]); // client-side page slice
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, pageSize: 12, totalRecords: 0 });
   const [batchFilter, setBatchFilter] = useState("all");
+  const [paperSearchInput, setPaperSearchInput] = useState("");
+  const [paperSearch, setPaperSearch] = useState("");
   const [paperModal, setPaperModal] = useState<"add" | "edit" | null>(null);
   const [editingGroup, setEditingGroup] = useState<PaperGroup | null>(null);
   const [form, setForm] = useState<Record<string, any>>({});
@@ -137,9 +139,12 @@ export function MarksPage({ role }: MarksPageProps) {
   const [rankList, setRankList] = useState<{ student: any; marks: number | null }[]>([]);
   const [rankAllData, setRankAllData] = useState<any[]>([]);
   const [rankBatchTab, setRankBatchTab] = useState<string>("all");
+  const [rankSearch, setRankSearch] = useState("");
 
   // Student counts per batch (for "Entered" column)
   const [batchStudentCounts, setBatchStudentCounts] = useState<Record<string, number>>({});
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const isAdmin = role === "admin";
 
@@ -183,16 +188,33 @@ export function MarksPage({ role }: MarksPageProps) {
     })();
   }, []);
 
-  // ── Fetch all papers and group them ───────────────────────────────────────
+  // ── Fetch all papers (server-side search) and group them ───────────────────
   const fetchPapers = useCallback(async () => {
     try {
-      const res = await getAllPapers(1, 500, "");
+      const res = await getAllPapers(1, 500, "", paperSearch);
       const data = res?.data?.data ?? [];
       setAllGroups(groupPapers(data));
     } catch (err) { console.error("Failed to fetch papers:", err); }
-  }, []);
+  }, [paperSearch]);
 
   useEffect(() => { fetchPapers(); }, [fetchPapers]);
+
+  // ── Debounced paper search (Enter / clear apply instantly) ─────────────────
+  const handlePaperSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    setPaperSearchInput(v);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPaperSearch(v);
+      setPagination((p) => ({ ...p, page: 1 }));
+    }, 300);
+  };
+
+  const clearPaperSearch = () => {
+    setPaperSearchInput("");
+    setPaperSearch("");
+    setPagination((p) => ({ ...p, page: 1 }));
+  };
 
   // ── Client-side pagination over grouped papers ────────────────────────────
   useEffect(() => {
@@ -273,6 +295,7 @@ export function MarksPage({ role }: MarksPageProps) {
   const openRank = async (group: PaperGroup) => {
     setSelectedGroup(group);
     setRankBatchTab("all");
+    setRankSearch("");
     try {
       const [students, marks] = await Promise.all([
         fetchStudentsForGroup(group),
@@ -296,14 +319,20 @@ export function MarksPage({ role }: MarksPageProps) {
     setView("rank");
   };
 
-  // ── Rank filter by tab ────────────────────────────────────────────────────
+  // ── Rank filter by tab + search ───────────────────────────────────────────
   useEffect(() => {
-    if (rankBatchTab === "all") {
-      setRankList(rankAllData);
-    } else {
-      setRankList(rankAllData.filter((r: any) => r.batchId === rankBatchTab));
-    }
-  }, [rankBatchTab, rankAllData]);
+    const byBatch = rankBatchTab === "all"
+      ? rankAllData
+      : rankAllData.filter((r: any) => r.batchId === rankBatchTab);
+    const q = rankSearch.trim().toLowerCase();
+    if (!q) { setRankList(byBatch); return; }
+    setRankList(byBatch.filter((r: any) => {
+      const s = r.student;
+      const name = `${s.user?.first_name ?? s.first_name ?? s.firstName ?? ""} ${s.user?.last_name ?? s.last_name ?? s.lastName ?? ""}`.trim().toLowerCase();
+      const callup = String(s.call_up_no ?? s.callUpNo ?? "").toLowerCase();
+      return name.includes(q) || callup.includes(q);
+    }));
+  }, [rankBatchTab, rankAllData, rankSearch]);
 
   // ── Students filtered by marks batch tab ──────────────────────────────────
   const marksTabStudents = useMemo(() => {
@@ -532,13 +561,59 @@ export function MarksPage({ role }: MarksPageProps) {
       {/* ── Papers List View ────────────────────────────────────────────────── */}
       {view === "papers" && (
         <>
+          {/* Quick instructions */}
           <Card className="p-4">
-            <div className="flex items-center gap-3">
-              <Sel className="w-48" value={batchFilter} onChange={(e) => { setBatchFilter(e.target.value); setPagination((p) => ({ ...p, page: 1 })); }}>
-                <option value="all">All Batches</option>
-                {activeBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </Sel>
-              <span className="text-xs text-muted-foreground">{pagination.totalRecords} paper{pagination.totalRecords !== 1 ? "s" : ""} total</span>
+            <ul className="grid sm:grid-cols-2 gap-x-8 gap-y-2.5">
+              <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
+                <PenLine className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                <span>Click <b className="text-foreground font-semibold">Marks</b> (or the paper name) to record results for a paper.</span>
+              </li>
+              <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
+                <Lock className="w-4 h-4 text-muted-foreground/70 shrink-0 mt-0.5" />
+                <span>Saved marks are locked — <b className="text-foreground font-semibold">double-click</b> a cell to edit it.</span>
+              </li>
+              <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
+                <Trophy className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <span>Open the <b className="text-foreground font-semibold">Rank List</b> to see students in order of marks.</span>
+              </li>
+              <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
+                <Send className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                <span><b className="text-foreground font-semibold">Publish</b> releases marks to students — unpublish to withdraw them.</span>
+              </li>
+            </ul>
+          </Card>
+
+          {/* Search + filters */}
+          <Card className="p-4">
+            <div className="space-y-3">
+              {/* Search — line 1 (full width) */}
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-9 pr-9"
+                  placeholder="Search papers by name, material or batch…"
+                  value={paperSearchInput}
+                  onChange={handlePaperSearchChange}
+                />
+                {paperSearchInput !== "" && (
+                  <button
+                    type="button"
+                    onClick={clearPaperSearch}
+                    aria-label="Clear search"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              {/* Batch filter — line 2 */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <Sel className="w-48" value={batchFilter} onChange={(e) => { setBatchFilter(e.target.value); setPagination((p) => ({ ...p, page: 1 })); }}>
+                  <option value="all">All Batches</option>
+                  {activeBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </Sel>
+                <span className="text-xs text-muted-foreground">{pagination.totalRecords} paper{pagination.totalRecords !== 1 ? "s" : ""} total</span>
+              </div>
             </div>
           </Card>
 
@@ -592,24 +667,40 @@ export function MarksPage({ role }: MarksPageProps) {
                           </Badge>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => openEnter(g)} className="p-1.5 hover:bg-muted rounded-lg" title="Enter Marks">
-                              <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => openEnter(g)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                              title="Enter marks for this paper"
+                            >
+                              <PenLine className="w-3.5 h-3.5" />Marks
                             </button>
-                            <button onClick={() => openRank(g)} className="p-1.5 hover:bg-muted rounded-lg" title="Rank List">
-                              <Award className="w-3.5 h-3.5 text-muted-foreground" />
+                            <button
+                              onClick={() => openRank(g)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                              title="View rank list"
+                            >
+                              <Trophy className="w-3.5 h-3.5" />Rank
                             </button>
                             {isAdmin && (
                               <>
-                                <button onClick={() => openEdit(g)} className="p-1.5 hover:bg-muted rounded-lg" title="Edit Paper">
-                                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                                <button
+                                  onClick={() => openEdit(g)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-sky-600 dark:text-sky-400 hover:bg-sky-500/10 transition-colors"
+                                  title="Edit paper details"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />Edit
                                 </button>
                                 <button
                                   onClick={() => handleTogglePublish(g)}
-                                  className="p-1.5 hover:bg-muted rounded-lg"
-                                  title={g.is_mark_released ? "Unpublish" : "Publish"}
+                                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                    g.anyReleased
+                                      ? "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10"
+                                      : "text-muted-foreground hover:bg-muted"
+                                  }`}
+                                  title={g.is_mark_released ? "Withdraw marks from students" : "Release marks to students"}
                                 >
-                                  <Zap className={cn("w-3.5 h-3.5", g.anyReleased ? "text-amber-500" : "text-muted-foreground")} />
+                                  <Send className="w-3.5 h-3.5" />{g.is_mark_released ? "Unpublish" : "Publish"}
                                 </button>
                               </>
                             )}
@@ -737,10 +828,37 @@ export function MarksPage({ role }: MarksPageProps) {
           )}
 
           <Card className="overflow-hidden">
-            <div className="p-4 border-b border-border">
-              <p className="text-sm font-semibold text-foreground">{selectedGroup.paper_name} — Rank List</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {batchTabLabel(rankBatchTab)} · {fmtDate(selectedGroup.paper_date)}
+            <div className="p-4 border-b border-border space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{selectedGroup.paper_name} — Rank List</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {batchTabLabel(rankBatchTab)} · {fmtDate(selectedGroup.paper_date)}
+                  </p>
+                </div>
+                {/* Student search */}
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input
+                    className="pl-8 pr-8 h-9 text-xs"
+                    placeholder="Search student or call-up no…"
+                    value={rankSearch}
+                    onChange={(e) => setRankSearch(e.target.value)}
+                  />
+                  {rankSearch !== "" && (
+                    <button
+                      type="button"
+                      onClick={() => setRankSearch("")}
+                      aria-label="Clear search"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Showing {rankList.length} of {rankAllData.length} student{rankAllData.length !== 1 ? "s" : ""} — ranked highest marks first.
               </p>
             </div>
             <div className="divide-y divide-border/50">

@@ -67,6 +67,13 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             return;
         }
 
+        // This system is for staff & admin only — student JWTs are rejected
+        // here (the backend also rejects their data calls).
+        if (res.data.user?.roles && res.data.user.roles === "student") {
+            setErr("Only staff and admin accounts can access the management system.");
+            return;
+        }
+
         // Persist session (no refresh token — single long-lived JWT)
         localStorage.setItem("token", res.data.token);
         localStorage.setItem("user", JSON.stringify(res.data.user));
@@ -271,7 +278,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                             <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09C6.22 6.86 8.87 4.75 12 4.75z" />
                         </svg>
                         {busy ? "Signing In…" : "Sign in with Google"}
-                    </Btn>
+                    </Btn>   
 
                     <div className="mt-8 p-4 bg-muted/60 rounded-xl border border-border">
                         <p className="text-xs font-semibold text-foreground mb-2">
