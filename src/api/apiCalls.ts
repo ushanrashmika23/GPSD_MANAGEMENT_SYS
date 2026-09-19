@@ -445,6 +445,90 @@ const getMaterialFileBlobUrl = async (materialId: string): Promise<string> => {
     }
 };
 
+//================================ALL CALLS FOR DIRECT-TO-R2 UPLOADS====================================================
+// The bulk upload manager sends file bytes straight to R2 with presigned part
+// URLs — these calls only orchestrate (open / sign / list / complete / abort),
+// so no file data passes through the API.
+
+// POST /uploads/init — open a multipart upload, receive key + uploadId + partSize
+const initUpload = async (payload: { fileName: string; contentType: string; size: number; type: string }): Promise<any> => {
+    try {
+        const response = await api.post("/uploads/init", payload);
+        return response.data;
+    } catch (error) {
+        console.error("Error starting upload:", error);
+        throw error;
+    }
+};
+
+// POST /uploads/sign-parts — presigned PUT URLs for the given part numbers
+const signUploadParts = async (payload: { key: string; uploadId: string; partNumbers: number[] }): Promise<any> => {
+    try {
+        const response = await api.post("/uploads/sign-parts", payload);
+        return response.data;
+    } catch (error) {
+        console.error("Error signing part URLs:", error);
+        throw error;
+    }
+};
+
+// POST /uploads/list-parts — what R2 already holds (source of truth when resuming)
+const listUploadParts = async (payload: { key: string; uploadId: string }): Promise<any> => {
+    try {
+        const response = await api.post("/uploads/list-parts", payload);
+        return response.data;
+    } catch (error) {
+        // A 404 means the upload no longer exists server-side (aborted/expired).
+        // Callers handle that as a normal "start over" signal, so return the
+        // prepared response instead of throwing.
+        if (error?.response?.status === 404) {
+            return error.response.data;
+        }
+        console.error("Error listing uploaded parts:", error);
+        throw error;
+    }
+};
+
+// POST /uploads/complete — assemble the uploaded parts into the final object
+const completeUpload = async (payload: { key: string; uploadId: string; parts: { partNumber: number; etag: string }[] }): Promise<any> => {
+    try {
+        const response = await api.post("/uploads/complete", payload);
+        return response.data;
+    } catch (error) {
+        console.error("Error completing upload:", error);
+        throw error;
+    }
+};
+
+// POST /uploads/abort — discard an in-progress upload and free its parts
+const abortUpload = async (payload: { key: string; uploadId: string }): Promise<any> => {
+    try {
+        const response = await api.post("/uploads/abort", payload);
+        return response.data;
+    } catch (error) {
+        console.error("Error aborting upload:", error);
+        throw error;
+    }
+};
+
+// POST /materials/bulk — create material rows for files already uploaded to R2
+const registerMaterialsBulk = async (materials: {
+    title: string;
+    description?: string;
+    type: string;
+    lesson_id: string;
+    key: string;
+    size?: number;
+}[]): Promise<any> => {
+    try {
+        const response = await api.post("/materials/bulk", { materials });
+        return response.data;
+    } catch (error) {
+        console.error("Error registering materials:", error);
+        throw error;
+    }
+};
+
 //================================ALL CALLS FOR MATERIAL ACCESS====================================================
 
 const getMaterialAccesses = async (materialId: string): Promise<any> => {
@@ -568,6 +652,60 @@ const deletePaperApi = async (paperId: string): Promise<any> => {
     }
 };
 
+//================================ALL CALLS FOR STATS / REPORTS====================================================
+// Aggregate figures behind the Dashboard and Reports pages. Each returns the
+// wire body {success, msg, data} — these payloads are FLAT, so callers read
+// `res.data` (unlike the paged endpoints, which nest {data, meta} and are read
+// as `res.data.data`).
+
+// Dashboard KPIs in one call. Staff receive `finance: null`.
+const getStatsOverview = async (): Promise<any> => {
+    try {
+        const response = await api.get("/stats/overview");
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching overview stats:", error);
+        throw error;
+    }
+};
+
+// Admin only — a staff token gets a 403 from the server.
+const getFinanceStats = async (months: number = 6, batchId: string = ""): Promise<any> => {
+    try {
+        const response = await api.get("/stats/finance", {
+            params: { months, batch_id: batchId || undefined },
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching finance stats:", error);
+        throw error;
+    }
+};
+
+const getPerformanceStats = async (batchId: string = ""): Promise<any> => {
+    try {
+        const response = await api.get("/stats/performance", {
+            params: { batch_id: batchId || undefined },
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching performance stats:", error);
+        throw error;
+    }
+};
+
+const getAttendanceStats = async (months: number = 6, batchId: string = ""): Promise<any> => {
+    try {
+        const response = await api.get("/stats/attendance", {
+            params: { months, batch_id: batchId || undefined },
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching attendance stats:", error);
+        throw error;
+    }
+};
+
 //================================ALL CALLS FOR MANIPULATING USERS (ADMIN / STAFF)====================================================
 
 interface UserFormData {
@@ -641,4 +779,4 @@ const resetUserPassword = async (userId: string, newPassword: string): Promise<a
     }
 };
 
-export { firebaseLogin, autoLogin, getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, unmarkAttendance, getAttendanceHistory, deleteClassDay, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialSignedUrl, getMaterialFileBlobUrl, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark, updatePaperApi, deletePaperApi, getAllUsers, addUser, updateUser, resetUserPassword };
+export { firebaseLogin, autoLogin, getAllStudents, getStudentById, updateStudent, deleteStudent, resetStudentPassword, getAllLessons, updateLesson, deleteLesson, addLesson, getAllBatches, addBatch, updateBatch, deleteBatch, addStudent, getTodayClasses, createNewDay, markAttendance, unmarkAttendance, getAttendanceHistory, deleteClassDay, getAllPayments, createPayment, getStudentPaymentData, deletePayment, getAllMaterials, addMaterial, updateMaterial, deleteMaterial, getMaterialSignedUrl, getMaterialFileBlobUrl, initUpload, signUploadParts, listUploadParts, completeUpload, abortUpload, registerMaterialsBulk, getMaterialAccesses, grantBatchAccess, revokeBatchAccess, getAllPapers, createPaper, createMark, updateMarkApi, getMarksByPaper, togglePublishMark, updatePaperApi, deletePaperApi, getStatsOverview, getFinanceStats, getPerformanceStats, getAttendanceStats, getAllUsers, addUser, updateUser, resetUserPassword };

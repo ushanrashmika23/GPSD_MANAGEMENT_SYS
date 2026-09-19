@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Layers, CalendarCheck, Award,
-  CreditCard, BookMarked, QrCode, MessageSquare,
+  CreditCard, BookMarked, UploadCloud, QrCode, MessageSquare,
   BarChart2, UserCog, Settings, GraduationCap, LogOut, Menu,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
@@ -15,15 +15,20 @@ interface NavItem {
   group: string;
 }
 
+// Staff reach exactly two modules: Marks and Materials (view-only). Everything
+// else is adminOnly, so for a staff role the sidebar collapses to
+// "Academic › Marks" and "Content › Materials" — the empty groups below are
+// suppressed by the group-header check in the render pass.
 export const NAV_ITEMS: NavItem[] = [
-  { section: "dashboard",     label: "Dashboard",     icon: LayoutDashboard, group: "main" },
-  { section: "students",      label: "Students",      icon: Users,           group: "academic" },
-  { section: "batches",       label: "Batches",        icon: Layers,          group: "academic" },
-  { section: "attendance",    label: "Attendance",     icon: CalendarCheck,   group: "academic" },
+  { section: "dashboard",     label: "Dashboard",     icon: LayoutDashboard, group: "main",     adminOnly: true },
+  { section: "students",      label: "Students",      icon: Users,           group: "academic", adminOnly: true },
+  { section: "batches",       label: "Batches",        icon: Layers,          group: "academic", adminOnly: true },
+  { section: "attendance",    label: "Attendance",     icon: CalendarCheck,   group: "academic", adminOnly: true },
   { section: "marks",         label: "Marks",          icon: Award,           group: "academic" },
-  { section: "fees",          label: "Fees",           icon: CreditCard,      group: "finance" },
+  { section: "fees",          label: "Fees",           icon: CreditCard,      group: "finance",  adminOnly: true },
   { section: "materials",     label: "Materials",      icon: BookMarked,      group: "content" },
-  { section: "qrcodes",       label: "QR Codes",       icon: QrCode,          group: "tools" },
+  { section: "bulkupload",    label: "Bulk Upload",    icon: UploadCloud,     group: "content", adminOnly: true },
+  { section: "qrcodes",       label: "QR Codes",       icon: QrCode,          group: "tools",    adminOnly: true },
   { section: "communication", label: "Communication",  icon: MessageSquare,   group: "tools",  adminOnly: true },
   { section: "reports",       label: "Reports",        icon: BarChart2,       group: "admin",  adminOnly: true },
   { section: "users",         label: "Users",          icon: UserCog,         group: "admin",  adminOnly: true },
@@ -73,7 +78,7 @@ export function Sidebar({
         </div>
         {!collapsed && (
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-xs leading-tight truncate">Maths Institute</p>
+            <p className="font-bold text-xs leading-tight truncate">Combined Maths</p>
             <p className="text-[10px] text-sidebar-foreground/50 truncate">A/L Combined Maths</p>
           </div>
         )}

@@ -3,6 +3,13 @@ import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
+// Pinned dev/preview port. The browser origin is part of the R2 bucket's CORS
+// policy, so a silently-changing port breaks direct uploads with an opaque
+// preflight error. Vite's default behaviour is to increment the port when one
+// is busy (5173 → 5174 → ...), which is exactly how the upload origin drifts
+// out of the allowed list — so pin it, and fail loudly instead of drifting.
+const DEV_PORT = 5174
+
 
 function figmaAssetResolver() {
   return {
@@ -37,6 +44,8 @@ export default defineConfig({
   // (window.closed). COOP "same-origin-allow-popups" keeps that working —
   // "same-origin" would isolate the page and block access to the popup.
   server: {
+    port: DEV_PORT,
+    strictPort: true, // never fall back to another origin — see DEV_PORT above
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },
@@ -50,6 +59,7 @@ export default defineConfig({
     },
   },
   preview: {
+    port: DEV_PORT,
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },

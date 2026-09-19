@@ -8,6 +8,7 @@ export type NavSection =
   | "fees"
   | "marks"
   | "materials"
+  | "bulkupload"
   | "qrcodes"
   | "communication"
   | "reports"

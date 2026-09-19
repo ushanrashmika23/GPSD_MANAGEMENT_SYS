@@ -263,13 +263,16 @@ export function QRCodesPage({ students: _s, batches: _b }: QRCodesPageProps) {
   const renderIdCardHTML = (s: Student, qrDataUrl: string, batchNames: string[]): string => `
     <div style="width:${CARD_W}px;height:${CARD_H}px;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.12);display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif;background:#fff;flex-shrink:0;">
       <!-- Header -->
+      <!-- NOTE: this html2canvas renderer and the JSX one below must be kept in
+           sync — they are the same card drawn two ways, and only this one ends
+           up in the exported PNG. -->
       <div style="background:linear-gradient(135deg,#1e3a5f,#1a56db);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;">
         <div style="display:flex;align-items:center;gap:10px;">
           <div style="width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;">
-            <span style="color:#fff;font-weight:700;font-size:16px;">K</span>
+            <span style="color:#fff;font-weight:700;font-size:16px;">C</span>
           </div>
           <div>
-            <p style="color:#fff;font-weight:700;font-size:14px;margin:0;line-height:1.2;">KDU Academy</p>
+            <p style="color:#fff;font-weight:700;font-size:14px;margin:0;line-height:1.2;">Combined Maths</p>
             <p style="color:rgba(255,255,255,0.7);font-size:10px;margin:0;">Student Identity Card</p>
           </div>
         </div>
@@ -330,10 +333,10 @@ export function QRCodesPage({ students: _s, batches: _b }: QRCodesPageProps) {
         <div className="bg-gradient-to-r from-[#1e3a5f] to-[#1a56db] px-5 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center text-white font-bold text-base">
-              K
+              C
             </div>
             <div>
-              <p className="text-white font-bold text-sm leading-tight">KDU Academy</p>
+              <p className="text-white font-bold text-sm leading-tight">Combined Maths</p>
               <p className="text-white/70 text-[10px]">Student Identity Card</p>
             </div>
           </div>

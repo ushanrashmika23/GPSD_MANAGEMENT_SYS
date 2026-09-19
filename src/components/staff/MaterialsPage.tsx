@@ -8,6 +8,7 @@ import type { Material, Batch, Lesson, Role } from "../../lib/types";
 import { getAllMaterials, addMaterial, updateMaterial, deleteMaterial, addLesson, updateLesson, deleteLesson, getAllLessons, getAllBatches, getMaterialAccesses, grantBatchAccess, revokeBatchAccess } from "../../api/apiCalls";
 import { MaterialViewer } from "./MaterialViewer";
 import Pagination from "../ui/Pagination";
+import { acceptFor, extensionsFor, maxLabelFor, validateFile } from "../../lib/fileValidation";
 
 interface MaterialsPageProps {
   role: Role;
@@ -379,6 +380,7 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [completeNotify, setCompleteNotify] = useState<UploadTask | null>(null);
   const [materialAccesses, setMaterialAccesses] = useState<MaterialAccessRecord[]>([]);
@@ -672,6 +674,7 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
     // Pre-select the lesson when uploading from inside a lesson's page
     setForm({ type: "DOCUMENT", batchIds: [], batchNames: [], accessCount: 0, lessonId: selectedLessonId ?? "" });
     setFile(null);
+    setFileError(null);
     setDragOver(false);
     setModal("add");
   };
@@ -710,6 +713,32 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
     }
   };
 
+  // ── File selection ─────────────────────────────────────────────────────────
+  // Drop and browse both land here, so a file is checked against the rules for
+  // the chosen type exactly once, wherever it came from.
+  const acceptFile = (candidate: File | undefined) => {
+    if (!candidate) return;
+    const valid = validateFile(candidate, form.type ?? "DOCUMENT");
+    if (!valid.ok) {
+      setFile(null);
+      setFileError(valid.reason);
+      return;
+    }
+    setFile(candidate);
+    setFileError(null);
+  };
+
+  // The two types accept disjoint formats, so an already-chosen file cannot
+  // survive a type switch — drop it and say why rather than failing on submit.
+  const handleTypeChange = (next: Material["type"]) => {
+    setForm((f) => ({ ...f, type: next }));
+    if (!file) return;
+    const valid = validateFile(file, next ?? "DOCUMENT");
+    if (valid.ok) return;
+    setFile(null);
+    setFileError(valid.reason);
+  };
+
   // ── Drag-and-drop handlers ─────────────────────────────────────────────────
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -735,16 +764,17 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (droppedFile) setFile(droppedFile);
+    acceptFile(e.dataTransfer.files?.[0]);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
-    if (selected) setFile(selected);
+    acceptFile(e.target.files?.[0]);
   };
 
-  const removeFile = () => setFile(null);
+  const removeFile = () => {
+    setFile(null);
+    setFileError(null);
+  };
 
   // ── Background upload ──────────────────────────────────────────────────────
   const startUpload = async () => {
@@ -755,6 +785,15 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
     if (!file && !form.url) {
       alert("Please select a file to upload.");
       return;
+    }
+    // Last line of defence — the file zone already refuses these, but the type
+    // can change after a file is picked.
+    if (file) {
+      const valid = validateFile(file, form.type ?? "DOCUMENT");
+      if (!valid.ok) {
+        setFileError(valid.reason);
+        return;
+      }
     }
 
     const taskId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
@@ -1315,7 +1354,7 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
               <button
                 key={value}
                 type="button"
-                onClick={() => setForm((f) => ({ ...f, type: value as Material["type"] }))}
+                onClick={() => handleTypeChange(value as Material["type"])}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium transition-colors
                   ${form.type === value
                     ? "bg-primary text-primary-foreground"
@@ -1357,6 +1396,7 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
             >
               <input
                 type="file"
+                accept={acceptFor(form.type ?? "DOCUMENT")}
                 onChange={handleFileSelect}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 aria-label="Choose file to upload"
@@ -1405,6 +1445,20 @@ export function MaterialsPage({ role }: MaterialsPageProps) {
               )}
             </div>
           </div>
+
+          {/* What this type accepts — or why the file just chosen was refused */}
+          {fileError ? (
+            <p className="text-xs text-destructive flex items-start gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              <span>{fileError}</span>
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {form.type === "VIDEO"
+                ? `Video: ${extensionsFor("VIDEO").join(", ")} · up to ${maxLabelFor("VIDEO")} each.`
+                : `Document: PDF only · up to ${maxLabelFor("DOCUMENT")} each.`}
+            </p>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Btn v="outline" onClick={() => setModal(null)} disabled={saving}>Cancel</Btn>

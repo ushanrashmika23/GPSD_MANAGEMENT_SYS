@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Check, Lock, ArrowLeft, Pencil, Users, PenLine, Trophy, Send, Search, X } from "lucide-react";
+import { Plus, Check, Lock, ArrowLeft, Pencil, Users, PenLine, Trophy, Send, Search, X, Trash2 } from "lucide-react";
 import { Badge, Btn, Input, Sel, Modal, Card, Avatar } from "../ui";
 import { FLabel } from "../ui";
 import { fmtDate, cn } from "../../lib/utils";
@@ -58,6 +58,14 @@ interface MarkRow {
 
 interface MarksPageProps {
   role: Role;
+}
+
+// ── Mirror of the API's naming rule: stored name is `<name>-<batch>` ────────
+// Strips the suffix back off so the edit form shows the bare name the admin
+// typed. The API strips it again on save, so a miss here is harmless.
+function basePaperName(name: string, batchName: string) {
+  const suffix = `-${batchName}`;
+  return batchName && name.endsWith(suffix) ? name.slice(0, -suffix.length) : name;
 }
 
 // ── Group raw paper rows into logical papers ────────────────────────────────
@@ -390,22 +398,20 @@ export function MarksPage({ role }: MarksPageProps) {
     }
   };
 
-  // ── Create paper: one record per selected batch ───────────────────────────
+  // ── Create paper: exactly one record, for exactly one batch ───────────────
   const savePaper = async () => {
     if (!form.paper_name?.trim()) { alert("Paper name is required."); return; }
-    if (form.batchIds.length === 0) { alert("Please select at least one batch."); return; }
+    if (!form.batch_id) { alert("Please select a batch."); return; }
     setSaving(true);
     try {
-      // Create one paper record per selected batch (FK-safe)
-      const promises = form.batchIds.map((bid: string) =>
-        createPaper({
-          paper_name: form.paper_name,
-          paper_date: form.paper_date || new Date().toISOString(),
-          batch_id: bid,
-          material_id: form.material_id || "",
-        })
-      );
-      await Promise.all(promises);
+      // One paper, one batch. The API appends the batch to the stored name
+      // (`<name>-<batch>`), so the bare name the admin typed is what is sent.
+      await createPaper({
+        paper_name: form.paper_name.trim(),
+        paper_date: form.paper_date || new Date().toISOString(),
+        batch_id: form.batch_id,
+        material_id: form.material_id || "",
+      });
       setPaperModal(null);
       setForm({});
       fetchPapers();
@@ -417,45 +423,24 @@ export function MarksPage({ role }: MarksPageProps) {
     }
   };
 
-  // ── Update paper: reconcile batches (delete removed, create new, update kept) ──
+  // ── Update paper: name/date/material only — the batch never moves ─────────
   const savePaperEdit = async () => {
     if (!editingGroup) return;
     if (!form.paper_name?.trim()) { alert("Paper name is required."); return; }
-    if (form.batchIds.length === 0) { alert("Please select at least one batch."); return; }
     setSaving(true);
     try {
-      const newBatchIds: string[] = form.batchIds;
-      const oldBatchIds: string[] = editingGroup.batchIds;
-
-      const removedRecords = editingGroup.records.filter((r) => !newBatchIds.includes(r.batch_id));
-      const addedBatchIds = newBatchIds.filter((bid) => !oldBatchIds.includes(bid));
-      const keptRecords = editingGroup.records.filter((r) => newBatchIds.includes(r.batch_id));
-
-      const tasks: Promise<any>[] = [];
-
-      // Delete records for batches removed from the paper
-      removedRecords.forEach((r) => tasks.push(deletePaperApi(r.id)));
-
-      // Create new records for newly added batches
-      addedBatchIds.forEach((bid) => tasks.push(
-        createPaper({
-          paper_name: form.paper_name,
-          paper_date: form.paper_date,
-          batch_id: bid,
-          material_id: form.material_id || "",
-        })
-      ));
-
-      // Update shared fields on kept records (batch_id untouched — FK-safe)
-      keptRecords.forEach((r) => tasks.push(
+      // A paper has one batch, so this is normally a single record. Rows left
+      // over from the old multi-batch flow can still hold several: each is
+      // updated in place — never deleted, which would take its marks with it —
+      // and the API re-suffixes each with its own batch, splitting them into
+      // separate papers under the new naming.
+      await Promise.all(editingGroup.records.map((r) =>
         updatePaperApi(r.id, {
-          paper_name: form.paper_name,
+          paper_name: form.paper_name.trim(),
           paper_date: form.paper_date,
           material_id: form.material_id || "",
         })
       ));
-
-      await Promise.all(tasks);
       setPaperModal(null);
       setEditingGroup(null);
       setForm({});
@@ -465,6 +450,26 @@ export function MarksPage({ role }: MarksPageProps) {
       alert("Failed to update paper: " + (err?.response?.data?.msg ?? err?.message ?? "Unknown error"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── Delete paper (its marks go with it) ───────────────────────────────────
+  // The batch is fixed at creation, so this is also the only way to correct a
+  // paper filed under the wrong batch: delete it and add it again.
+  const handleDelete = async (group: PaperGroup) => {
+    const marks = group.marksCount;
+    const ok = window.confirm(
+      `Delete "${group.paper_name}"?\n\n` +
+      (marks > 0 ? `${marks} recorded mark${marks !== 1 ? "s" : ""} will be deleted with it. ` : "") +
+      `This cannot be undone.`
+    );
+    if (!ok) return;
+    try {
+      await Promise.all(group.records.map((r) => deletePaperApi(r.id)));
+      fetchPapers();
+    } catch (err: any) {
+      console.error("Failed to delete paper:", err);
+      alert("Failed to delete paper: " + (err?.response?.data?.msg ?? err?.message ?? "Unknown error"));
     }
   };
 
@@ -486,7 +491,7 @@ export function MarksPage({ role }: MarksPageProps) {
   // ── Open add modal ─────────────────────────────────────────────────────────
   const openAdd = () => {
     setEditingGroup(null);
-    setForm({ paper_name: "", batchIds: [], material_id: "", paper_date: new Date().toISOString().split("T")[0] });
+    setForm({ paper_name: "", batch_id: "", material_id: "", paper_date: new Date().toISOString().split("T")[0] });
     setPaperModal("add");
   };
 
@@ -494,25 +499,14 @@ export function MarksPage({ role }: MarksPageProps) {
   const openEdit = (group: PaperGroup) => {
     setEditingGroup(group);
     setForm({
-      paper_name: group.paper_name,
-      batchIds: group.batchIds,
+      // The stored name carries the batch suffix; the form shows the bare name
+      // the admin typed and the API puts the suffix back on save.
+      paper_name: basePaperName(group.paper_name, group.records[0]?.batchName ?? ""),
+      batch_id: group.batchIds[0] ?? "",
       material_id: group.material_id,
       paper_date: group.paper_date ? group.paper_date.split("T")[0] : "",
     });
     setPaperModal("edit");
-  };
-
-  // ── Toggle batch checkbox in form ─────────────────────────────────────────
-  const toggleBatchCheck = (batchId: string) => {
-    setForm((f) => {
-      const current: string[] = f.batchIds ?? [];
-      return {
-        ...f,
-        batchIds: current.includes(batchId)
-          ? current.filter((id) => id !== batchId)
-          : [...current, batchId],
-      };
-    });
   };
 
   // ── Batch tab label helper ─────────────────────────────────────────────────
@@ -545,7 +539,7 @@ export function MarksPage({ role }: MarksPageProps) {
               <ArrowLeft className="w-4 h-4" />Back to Papers
             </Btn>
           )}
-          {view === "papers" && isAdmin && (
+          {view === "papers" && (
             <Btn sz="sm" onClick={openAdd}>
               <Plus className="w-4 h-4" />New Paper
             </Btn>
@@ -562,7 +556,7 @@ export function MarksPage({ role }: MarksPageProps) {
       {view === "papers" && (
         <>
           {/* Quick instructions */}
-          <Card className="p-4">
+          {/* <Card className="p-4">
             <ul className="grid sm:grid-cols-2 gap-x-8 gap-y-2.5">
               <li className="flex items-start gap-2.5 text-xs text-muted-foreground">
                 <PenLine className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
@@ -581,7 +575,7 @@ export function MarksPage({ role }: MarksPageProps) {
                 <span><b className="text-foreground font-semibold">Publish</b> releases marks to students — unpublish to withdraw them.</span>
               </li>
             </ul>
-          </Card>
+          </Card> */}
 
           {/* Search + filters */}
           <Card className="p-4">
@@ -622,38 +616,20 @@ export function MarksPage({ role }: MarksPageProps) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/30">
-                    {["Paper", "Batches", "Material", "Date", "Entered", "Avg", "Status", "Actions"].map((h) => (
+                    {["Paper", "Material", "Date", "Entered", "Avg", "Status", "Actions"].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {pageGroups.length === 0 ? (
-                    <tr><td colSpan={8} className="py-12 text-center text-muted-foreground text-sm">No papers found.</td></tr>
+                    <tr><td colSpan={7} className="py-12 text-center text-muted-foreground text-sm">No papers found.</td></tr>
                   ) : pageGroups.map((g) => {
                     const bCount = g.batchIds.reduce((sum, bid) => sum + (batchStudentCounts[bid] || 0), 0);
-                    const visibleBatches = g.batchNames.slice(0, 2);
-                    const overflow = g.batchNames.length - 2;
                     return (
                       <tr key={g.key} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-3 font-medium text-foreground cursor-pointer hover:text-primary" onClick={() => openEnter(g)}>
                           {g.paper_name}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {g.batchNames.length === 0 ? (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            ) : (
-                              <>
-                                {visibleBatches.map((name) => (
-                                  <Badge key={name} v="muted" className="text-[10px]">{name}</Badge>
-                                ))}
-                                {overflow > 0 && (
-                                  <Badge v="accent" className="text-[10px]">+{overflow}</Badge>
-                                )}
-                              </>
-                            )}
-                          </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">{g.materialName}</td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">{fmtDate(g.paper_date)}</td>
@@ -701,6 +677,13 @@ export function MarksPage({ role }: MarksPageProps) {
                                   title={g.is_mark_released ? "Withdraw marks from students" : "Release marks to students"}
                                 >
                                   <Send className="w-3.5 h-3.5" />{g.is_mark_released ? "Unpublish" : "Publish"}
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(g)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                                  title="Delete this paper and the marks recorded against it"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />Delete
                                 </button>
                               </>
                             )}
@@ -916,42 +899,31 @@ export function MarksPage({ role }: MarksPageProps) {
             />
           </div>
 
-          {/* ── Batch checkboxes ────────────────────────────────────────────── */}
+          {/* ── Batch (exactly one per paper) ───────────────────────────────── */}
           <div>
-            <FLabel>Batches (select all that apply)</FLabel>
-            <p className="text-xs text-muted-foreground mt-1 mb-2">
-              Select which batches wrote this paper. A separate paper record is kept per batch.
-            </p>
-            {activeBatches.length === 0 ? (
+            <FLabel>Batch</FLabel>
+            {paperModal === "edit" ? (
+              <>
+                <Input value={editingGroup?.records[0]?.batchName ?? "—"} readOnly disabled className="bg-muted/50" />
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  A paper's batch is fixed once it is created — it is part of the paper's name. To move it, delete the paper and add it again under the other batch.
+                </p>
+              </>
+            ) : activeBatches.length === 0 ? (
               <p className="text-xs text-muted-foreground italic py-2">No active batches available.</p>
             ) : (
-              <div className="border border-border rounded-xl overflow-hidden divide-y divide-border/50 max-h-48 overflow-y-auto">
-                {activeBatches.map((b) => {
-                  const checked = (form.batchIds ?? []).includes(b.id);
-                  return (
-                    <label
-                      key={b.id}
-                      className={cn(
-                        "flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/30",
-                        checked && "bg-primary/5"
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleBatchCheck(b.id)}
-                        className="w-4 h-4 rounded border-border text-primary focus:ring-2 focus:ring-ring accent-primary"
-                      />
-                      <span className="text-sm text-foreground">{b.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-            {(form.batchIds ?? []).length > 0 && (
-              <p className="text-xs text-muted-foreground mt-2">
-                {form.batchIds.length} batch{form.batchIds.length !== 1 ? "es" : ""} selected
-              </p>
+              <>
+                <Sel value={form.batch_id || ""} onChange={(e) => setForm((f) => ({ ...f, batch_id: e.target.value }))}>
+                  <option value="">Select batch</option>
+                  {activeBatches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </Sel>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Saved as{" "}
+                  <span className="font-medium text-foreground">
+                    {form.paper_name?.trim() || "Paper name"}-{activeBatches.find((b) => b.id === form.batch_id)?.name ?? "batch"}
+                  </span>
+                </p>
+              </>
             )}
           </div>
 

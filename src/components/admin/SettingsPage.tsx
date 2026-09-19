@@ -9,9 +9,9 @@ export function SettingsPage() {
   const [tab, setTab] = useState<SettingsTab>("institute");
   const [saved, setSaved] = useState(false);
   const [inst, setInst] = useState({
-    name: "Sudath Kumara Combined Mathematics Institute",
-    tagline: "Advanced Level Combined Mathematics",
-    address: "No. 15, Kandy Road, Kiribathgoda, Gampaha",
+    name: "Combined Maths",
+    tagline: "A/L Combined Maths",
+    address: "Mathugama",
     phone: "0771234567",
     email: "info@mathsinstitute.lk",
     website: "www.mathsinstitute.lk",

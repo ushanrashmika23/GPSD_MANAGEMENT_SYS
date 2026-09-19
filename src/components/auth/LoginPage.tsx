@@ -79,7 +79,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         localStorage.setItem("user", JSON.stringify(res.data.user));
 
         const user = mapBackendUser(res.data.user);
-        alert(`Login successful\n\n${JSON.stringify(user, null, 2)}`);
+        // alert(`Login successful\n\n${JSON.stringify(user, null, 2)}`);
         onLogin(user); // Shell opens on the Dashboard section by default
     };
 
@@ -121,6 +121,17 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         try {
             const result = await signInWithPopup(auth, googleProvider);
             console.log("Google sign-in response:", result);
+
+            // Debug aid: this Firebase UID is what the backend stores as
+            // `gAuthID` and matches `user.gAuthID` against during
+            // firebase-login. Shown on EVERY Google sign-in — including the
+            // ones the backend then rejects — so the value is readable when
+            // an account still needs linking. Blocks the login until
+            // dismissed; remove once account linking is settled.
+            console.log(
+                `gAuth ID (Firebase UID):\n${result.user.uid}\n\n` +
+                `Email: ${result.user.email ?? "—"}`
+            );
 
             // Debug: the raw Google OAuth credential (its idToken is a Google
             // token — NOT what the backend verifies, see below)
@@ -178,7 +189,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                         <GraduationCap className="w-6 h-6 text-accent-foreground" />
                     </div>
                     <div>
-                        <p className="font-bold text-sm leading-none">Maths Institute</p>
+                        <p className="font-bold text-sm leading-none">Combined Maths</p>
                         <p className="text-primary-foreground/60 text-xs mt-0.5">Management System</p>
                     </div>
                 </div>
@@ -218,7 +229,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                         <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
                             <GraduationCap className="w-6 h-6 text-primary-foreground" />
                         </div>
-                        <span className="font-bold text-lg">Maths Institute</span>
+                        <span className="font-bold text-lg">Combined Maths</span>
                     </div>
 
                     <h2 className="text-2xl font-bold text-foreground mb-1">Welcome back</h2>

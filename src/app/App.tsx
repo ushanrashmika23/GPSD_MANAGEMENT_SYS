@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LoginPage } from "../components/auth/LoginPage";
 import { Shell } from "../components/layout/Shell";
+import { UploadManagerProvider } from "../lib/uploadManager";
 import { autoLogin } from "../api/apiCalls";
 import { mapBackendUser } from "../lib/utils";
 import {
@@ -87,14 +88,17 @@ export default function App() {
   };
 
   return (
-    <Shell
-      user={currentUser}
-      onLogout={() => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        setCurrentUser(null);
-      }}
-      state={state}
-    />
+    // Above Shell so an in-flight upload survives moving between sections.
+    <UploadManagerProvider>
+      <Shell
+        user={currentUser}
+        onLogout={() => {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          setCurrentUser(null);
+        }}
+        state={state}
+      />
+    </UploadManagerProvider>
   );
 }
